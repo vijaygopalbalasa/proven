@@ -58,7 +58,7 @@ function render() {
   }
   const sub = subtotal();
   const discount = Math.round((sub * couponPercent) / 100);
-  const shipping = sub > freeShippingFrom ? 0 : shippingFee;
+  const shipping = sub >= freeShippingFrom ? 0 : shippingFee;
   document.getElementById('subtotal').textContent = money(sub);
   document.getElementById('discount').textContent = discount ? '-' + money(discount) : money(0);
   document.getElementById('shipping').textContent = shipping ? money(shipping) : 'Free';
