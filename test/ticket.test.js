@@ -101,13 +101,13 @@ Verify shipping still shows $5.00.
   assert.equal(startUrlOf(steps), 'http://localhost:8091/');
 });
 
-test('the demo tickets and settings, as they were before the live gate, are ready to freeze', (t) => {
+test('the demo tickets and settings, as they were before the live gate, and T-3 are ready to freeze', (t) => {
   const dir = mkdtempSync(join(tmpdir(), 'proven-config-'));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   mkdirSync(join(dir, '.proven'));
   copyFileSync(join(FIXTURE_DEMO, 'proven-config.json'), join(dir, '.proven', 'config.json'));
   assert.deepEqual(loadConfig(dir), { app: 'demo/app', timeoutS: 300, maxAttempts: 4 });
-  for (const id of ['T-1', 'T-2']) {
+  for (const id of ['T-1', 'T-2', 'T-3']) {
     const ticket = parseTicket(readFileSync(join(FIXTURE_DEMO, 'tickets', `${id}.md`), 'utf8'), id);
     assert.deepEqual(ticketProblems(ticket), { missing: [], problems: [] }, id);
     assert.equal(ticket.url, 'http://localhost:8091/');

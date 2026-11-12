@@ -21,7 +21,8 @@ export const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..')
 export const PROVEN = join(ROOT, 'bin', 'proven.js');
 export const FAKE_KANE = join(ROOT, 'test', 'support', 'fake-kane.js');
 // The demo shop, tickets, settings and ignore rules as they were before the live gate (taken from git at 8f92ff1),
-// so the tests never depend on the live demo/app, tickets/, receipts/ or .proven/.
+// plus T-3 and the shop's coupons.json, added after the gate. The tests never depend on the live demo/app, tickets/,
+// receipts/ or .proven/.
 export const FIXTURE_DEMO = join(ROOT, 'test', 'fixtures', 'demo');
 export const TEST_EMAIL = ['proven-test', 'example.com'].join('@');
 
