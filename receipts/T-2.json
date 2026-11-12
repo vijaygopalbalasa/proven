@@ -1,0 +1,44 @@
+{
+  "receipt": 1,
+  "ticket": "T-2",
+  "title": "Free shipping from $50",
+  "settings": {
+    "app": "demo/app",
+    "timeout_s": 300,
+    "max_attempts": 4,
+    "start_url": "http://localhost:8091/"
+  },
+  "frozen": {
+    "commit": "e01dcc71c8494e6d3cab9aae92f7b0cda0804ff3",
+    "test": "tickets/T-2_test.md",
+    "test_sha256": "d17172858db9e37043771e12356e63f86bc1dabc1d18c4cf5b62e9396c1c16ca",
+    "ticket": "tickets/T-2.md",
+    "ticket_sha256": "97fc8f1e35964767c62f26fe231af5aa06f43465bdc0fc2c7e6374d4112b6cd1"
+  },
+  "red": {
+    "commit": "1b0134586a8ca49806dfec4fd52c1f4eb067a860",
+    "failed_step": 2,
+    "failed_step_title": "Free shipping at exactly $50",
+    "kane_one_liner": "The cart reaches a $50.00 subtotal, but it still charges $5.00 shipping and shows a $55.00 order total.",
+    "kane_reason": "Final verification failed: \"shipping shows Free and the order total shows $50.00.\"",
+    "evidence_sha256": "1fc06a478042fc2c31216ee412b2dcacfb9d8926ec838551c03899d3d6d474f9",
+    "kane": "kane-cli",
+    "kane_cli": "0.10.4",
+    "duration_s": 79,
+    "credits": 30.02,
+    "app_tree": "d6006651d796bfe735335813f75458b11576b534"
+  },
+  "green": {
+    "commit": "af4495add73e50d5572023a9a4e0d8431b39d94a",
+    "steps_passed": 2,
+    "steps_total": 2,
+    "evidence_sha256": "87bb2942f988107cecadd8f890305c46cb72cb418aa0d9000aa2aa96a3431404",
+    "kane": "kane-cli",
+    "kane_cli": "0.10.4",
+    "duration_s": 30,
+    "credits": 12.56,
+    "failed_attempts": 0,
+    "app_tree": "4407aa495048c64f932eac9b2a7448ebe4302504"
+  },
+  "receipt_sha256": "49858ce8a764597fc925e01b6c48f5a2dd5063b8a541cafa0c39931a6d69a27e"
+}
