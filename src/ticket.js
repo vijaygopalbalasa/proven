@@ -15,7 +15,6 @@ export function ticketPaths(id) {
     lock: `tickets/${id}.lock.json`,
     state: `.proven/state/${id}.json`,
     receipt: `receipts/${id}.json`,
-    recording: `tickets/output-${id}`,
   };
 }
 

@@ -155,7 +155,7 @@ test('the gate: freeze, red, a failed attempt, did-not-run cases, green, receipt
   // The agent fixes the app.
   fixCoupon(repo);
 
-  // Requirement 3.4: green commits G (the app as judged), then the receipt with Kane's recording.
+  // Requirement 3.4: green commits G (the app as judged), then the receipt. Kane's recording stays local.
   const beforeGreen = repo.head();
   r = await repo.run(['done', 'T-1'], { scenario: 'green' });
   assert.equal(r.code, 0, r.stderr);
@@ -165,9 +165,9 @@ test('the gate: freeze, red, a failed attempt, did-not-run cases, green, receipt
   assert.equal(repo.git('rev-parse', 'HEAD~1'), G);
   assert.equal(repo.git('rev-parse', `${G}~1`), beforeGreen);
   assert.deepEqual(repo.changed(G), ['demo/app/cart.js']);
-  const receiptFiles = repo.changed('HEAD');
-  assert.ok(receiptFiles.includes(RECEIPT) && receiptFiles.includes(STATE) && receiptFiles.includes('tickets/output-T-1/Result.md'));
-  assert.ok(receiptFiles.every((p) => p === RECEIPT || p === STATE || p.startsWith('tickets/output-T-1/')), receiptFiles.join(' '));
+  assert.deepEqual(repo.changed('HEAD'), [STATE, RECEIPT]);
+  assert.equal(repo.exists('tickets/output-T-1/Result.md'), true, 'the recording stays on disk for cheap local replays');
+  assert.equal(repo.git('ls-files', 'tickets/output-T-1'), '');
   assert.equal(repo.git('status', '--porcelain', '--', 'demo/app', 'tickets', 'receipts', '.proven/state'), '');
   assert.equal(repo.git('ls-files', '.testmuai'), '');
 
@@ -195,7 +195,7 @@ test('the gate: freeze, red, a failed attempt, did-not-run cases, green, receipt
   assert.equal(receipt.green.failed_attempts, 2);
   assert.equal(receipt.green.kane_cli, '0.10.4');
   assert.match(receipt.green.evidence_sha256, /^[0-9a-f]{64}$/);
-  assert.equal(receipt.recording.path, 'tickets/output-T-1');
+  assert.equal('recording' in receipt, false);
   assert.match(receipt.receipt_sha256, /^[0-9a-f]{64}$/);
   assert.equal(repo.json(STATE).status, 'done');
 
@@ -346,4 +346,19 @@ test('freeze commits exactly the ticket and the test even when other work is sta
   assert.deepEqual(repo.changed(lock.frozen_commit), ['tickets/T-1.md', 'tickets/T-1_test.md']);
   assert.equal(repo.git('diff', '--cached', '--name-only'), 'notes.txt');
   assert.equal(existsSync(join(repo.dir, 'notes.txt')), true);
+});
+
+test("Kane's recording is never committed, even without the ignore rule", async (t) => {
+  const repo = await makeRepo(t);
+  repo.write('.gitignore', repo.read('.gitignore').replace(/^tickets\/output-\*\/$/m, '').replace(/^\*\*\/output-\*\/.*$/gm, ''));
+  repo.git('commit', '-q', '-am', 'Forget the recording rule');
+  repo.write('tickets/T-1.md', couponTicket(repo.url));
+  assert.equal((await repo.run(['freeze', 'T-1'])).code, 0);
+  assert.equal((await repo.run(['red', 'T-1'], { scenario: 'red' })).code, 0);
+  assert.equal((await repo.run(['done', 'T-1'], { scenario: 'red' })).code, 1);
+  fixCoupon(repo);
+  assert.equal((await repo.run(['done', 'T-1'], { scenario: 'green' })).code, 0);
+  assert.equal(repo.git('status', '--porcelain', '--', 'tickets/output-T-1').startsWith('?? tickets/output-T-1/'), true);
+  assert.equal((await repo.run(['verify', RECEIPT])).code, 0);
+  assert.deepEqual(findCommittedLeaks(repo.dir, { calls: repo.kaneCalls() }), []);
 });

@@ -117,19 +117,6 @@ export function ignoredFiles(root, dir) {
   return [...new Set(out.split('\0').filter(Boolean))].sort();
 }
 
-// Files under a folder at a commit: [{ path, blob, mode }].
-export function commitFiles(root, commit, dir) {
-  const out = git(root, ['ls-tree', '-r', '-z', commit, '--', dir]);
-  const files = [];
-  for (const line of out.split('\0')) {
-    if (!line) continue;
-    const tab = line.indexOf('\t');
-    const [mode, type, blob] = line.slice(0, tab).split(' ');
-    if (type === 'blob') files.push({ path: line.slice(tab + 1), blob, mode });
-  }
-  return files;
-}
-
 export function parentOf(root, commit) {
   const out = git(root, ['rev-parse', '--verify', '-q', `${commit}^`], { allowFail: true });
   return out ? out.trim() : null;

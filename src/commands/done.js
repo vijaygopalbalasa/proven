@@ -16,10 +16,9 @@ import {
   resolveCommit,
   short,
 } from '../git.js';
-import { hashEntries, sha256 } from '../hash.js';
-import { findLeaks } from '../leak.js';
+import { sha256 } from '../hash.js';
 import { checkFrozenTest } from '../lock.js';
-import { RECORDING_EXCLUDES, recordingAt, recordingFromWorktree, sealReceipt } from '../receipt.js';
+import { sealReceipt } from '../receipt.js';
 import { kaneWords, runFrozenTest } from '../run.js';
 import { checkAttemptHistory, checkRedRecord, loadState, statusOf, writeJson, writeState } from '../state.js';
 import { checkId, parseTicket, ticketPaths } from '../ticket.js';
@@ -35,17 +34,6 @@ function screenshotLine(root, id, label, run) {
   } catch (err) {
     return `Screenshot: could not read the evidence pack (${err.message})`;
   }
-}
-
-// Kane writes its recording; Proven commits it byte for byte, so it must not carry private data.
-function recordingLeaks(files, exact) {
-  const kinds = new Set();
-  const paths = exact.filter((v) => v.includes('/'));
-  for (const f of files) {
-    if (f.content.subarray(0, 8192).includes(0)) continue;
-    for (const leak of findLeaks(f.content.toString('utf8'), { exact: paths })) kinds.add(leak.kind);
-  }
-  return [...kinds];
 }
 
 // proven done T-N: the agent says the ticket is done; Kane decides.
@@ -148,15 +136,6 @@ export async function cmdDone(ctx, [id]) {
     );
     return 2;
   }
-  const recordingFiles = recordingFromWorktree(root, p.recording);
-  if (!recordingFiles.length) {
-    out.both(`did not run: Kane's recording ${p.recording}/ is missing, so there is nothing to replay later.\nNo attempt was counted.`);
-    return 2;
-  }
-  const leaks = recordingLeaks(recordingFiles, run.exact);
-  if (leaks.length) {
-    throw new Refusal(`Kane's recording ${p.recording}/ holds ${leaks.join(', ')}. Not committing it. ${id} stays open.`);
-  }
   const frozenTicket = fileAt(root, lock.frozen_commit, p.ticket);
   const ticket = parseTicket(frozenTicket ? frozenTicket.toString('utf8') : '', id);
 
@@ -204,7 +183,6 @@ export async function cmdDone(ctx, [id]) {
       failed_attempts: state.attempts,
       app_tree: run.appTree,
     },
-    recording: { path: p.recording, sha256: hashEntries(recordingFiles) },
   });
   writeJson(root, p.receipt, receipt, { exact: run.exact });
   writeState(
@@ -219,15 +197,13 @@ export async function cmdDone(ctx, [id]) {
     { exact: run.exact },
   );
 
+  // The receipt and the state, nothing else. Kane's recording (tickets/output-T-N/) stays local: it carries
+  // Kane account and session ids, so it is never committed or hashed.
   const r = commitPaths(root, {
-    paths: [p.receipt, p.recording, p.state],
-    excludes: RECORDING_EXCLUDES(p.recording),
+    paths: [p.receipt, p.state],
     message: `${id}: receipt, red ${short(redCommit)}, green ${short(G)}`,
   });
-  assertOnlyPaths(root, r.commit, [p.receipt, p.recording, p.state]);
-  if (hashEntries(recordingAt(root, r.commit, p.recording)) !== receipt.recording.sha256) {
-    throw new Error(`the committed recording does not match the receipt (commit ${short(r.commit)})`);
-  }
+  assertOnlyPaths(root, r.commit, [p.receipt, p.state]);
   if (head(root) !== r.commit || !existsSync(join(root, p.receipt))) throw new Error('the receipt commit is not HEAD');
 
   out.both(`Done: red ${short(redCommit)}, green ${short(G)}.`);

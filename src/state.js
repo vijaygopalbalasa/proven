@@ -7,17 +7,13 @@ import { assertClean } from './leak.js';
 import { ticketPaths } from './ticket.js';
 
 // Is this a commit Proven makes for this ticket's state? Either the state file alone (red, an attempt,
-// needs a person, already passes) or the receipt commit (receipt, Kane's recording, state).
+// needs a person, already passes) or the receipt commit (the receipt and the state, nothing else).
 function provenShaped(root, id, commit, subject) {
   const p = ticketPaths(id);
   if (!subject.startsWith(`${id}: `)) return false;
   const paths = changedPaths(root, commit);
   if (paths.length === 1 && paths[0] === p.state) return true;
-  return (
-    subject.startsWith(`${id}: receipt`) &&
-    paths.includes(p.receipt) &&
-    paths.every((x) => x === p.state || x === p.receipt || x.startsWith(p.recording + '/'))
-  );
+  return subject.startsWith(`${id}: receipt`) && paths.includes(p.receipt) && paths.every((x) => x === p.state || x === p.receipt);
 }
 
 // Requirement: decisions come from the state as committed at HEAD, written only by Proven's own commits.

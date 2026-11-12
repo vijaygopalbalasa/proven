@@ -69,12 +69,28 @@ const values = {
   EVIDENCE_ID: evidenceId,
   TESTCASE_ID: randomBytes(13).toString('hex').toUpperCase(),
 };
+// Account ids, as Kane writes them into its recording (made up here, at run time).
+const account = {
+  org_id: String(3000000 + Math.floor(Math.random() * 999999)),
+  user_id: String(3000000 + Math.floor(Math.random() * 999999)),
+  project_id: randomBytes(13).toString('hex').toUpperCase(),
+};
 
 function log(extra = {}) {
   if (!process.env.FAKE_KANE_LOG) return;
   appendFileSync(
     process.env.FAKE_KANE_LOG,
-    JSON.stringify({ scenario: scenarioName, args, session_id: sessionId, share_url: shareUrl, session_dir: sessionDir, evidence_id: evidenceId, email, ...extra }) + '\n',
+    JSON.stringify({
+      scenario: scenarioName,
+      args,
+      session_id: sessionId,
+      share_url: shareUrl,
+      session_dir: sessionDir,
+      evidence_id: evidenceId,
+      email,
+      account_ids: [values.TESTCASE_ID, account.org_id, account.user_id, account.project_id],
+      ...extra,
+    }) + '\n',
   );
 }
 
@@ -217,7 +233,8 @@ function writeRecording(statuses, overall) {
     JSON.stringify(
       {
         test_id: '00000000-0000-4000-8000-0000000000aa',
-        project_id: 'FAKEPROJECT',
+        project_id: account.project_id,
+        org_id: account.org_id,
         session_name: stem,
         commit_id: sessionId,
         testcase_id: values.TESTCASE_ID,
@@ -227,5 +244,8 @@ function writeRecording(statuses, overall) {
       2,
     ) + '\n',
   );
-  writeFileSync(join(dir, '.internal', 'execution.json'), JSON.stringify({ session_id: sessionId, commit_id: sessionId, url: startUrl, status: overall }, null, 2) + '\n');
+  writeFileSync(
+    join(dir, '.internal', 'execution.json'),
+    JSON.stringify({ session_id: sessionId, commit_id: sessionId, org_id: account.org_id, user_id: account.user_id, url: startUrl, status: overall }, null, 2) + '\n',
+  );
 }

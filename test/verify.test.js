@@ -38,7 +38,7 @@ test('verify: a receipt edited after it was written is a MISMATCH', async (t) =>
   assert.deepEqual(failed(r.stdout), [
     'the receipt hash matches its contents',
     'the state history records this red, then one commit per failed attempt',
-    "the receipt is committed as it is, with Kane's recording",
+    'the receipt is committed as it is',
   ]);
 });
 

@@ -1,9 +1,5 @@
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
 import {
-  blob,
   changedPaths,
-  commitFiles,
   commitsChangingFile,
   commitsTouching,
   commitsTouchingOldestFirst,
@@ -13,9 +9,8 @@ import {
   parentOf,
   resolveCommit,
   short,
-  worktreeFiles,
 } from './git.js';
-import { canonicalJson, hashEntries, sha256 } from './hash.js';
+import { canonicalJson, sha256 } from './hash.js';
 import { settingsSha } from './lock.js';
 import { RED_FIELDS } from './state.js';
 import { ID_RE, ticketPaths } from './ticket.js';
@@ -28,27 +23,6 @@ export function receiptHash(receipt) {
 export function sealReceipt(body) {
   return { ...body, receipt_sha256: receiptHash(body) };
 }
-
-// Kane's recording folder, without any evidence packs, as [{ path (inside the folder), content }].
-function isEvidence(rest) {
-  return rest === 'evidence' || rest.startsWith('evidence/') || rest.endsWith('.evidence');
-}
-
-export function recordingFromWorktree(root, dir) {
-  return worktreeFiles(root, dir)
-    .map((p) => ({ full: p, rest: p.slice(dir.length + 1) }))
-    .filter((f) => !isEvidence(f.rest))
-    .map((f) => ({ path: f.rest, content: readFileSync(join(root, f.full)) }));
-}
-
-export function recordingAt(root, commit, dir) {
-  return commitFiles(root, commit, dir)
-    .map((f) => ({ ...f, rest: f.path.slice(dir.length + 1) }))
-    .filter((f) => !isEvidence(f.rest))
-    .map((f) => ({ path: f.rest, content: blob(root, f.blob) }));
-}
-
-export const RECORDING_EXCLUDES = (dir) => [`${dir}/evidence`, `${dir}/evidence/**`, `${dir}/**/*.evidence`];
 
 function check(name, fn) {
   try {
@@ -74,8 +48,8 @@ export function verifyReceipt(root, bytes) {
   } catch {
     return { receipt: null, checks: [{ name: 'the receipt is valid JSON', ok: false, detail: 'it is not' }] };
   }
-  if (!r || typeof r !== 'object' || !r.frozen || !r.red || !r.green || !r.recording || !r.settings) {
-    return { receipt: null, checks: [{ name: 'the receipt has settings, frozen, red, green and recording parts', ok: false, detail: 'some are missing' }] };
+  if (!r || typeof r !== 'object' || !r.frozen || !r.red || !r.green || !r.settings) {
+    return { receipt: null, checks: [{ name: 'the receipt has settings, frozen, red and green parts', ok: false, detail: 'some are missing' }] };
   }
   if (typeof r.ticket !== 'string' || !ID_RE.test(r.ticket)) {
     return { receipt: null, checks: [{ name: 'the receipt names a ticket like T-1', ok: false, detail: `it names "${r.ticket}"` }] };
@@ -93,7 +67,6 @@ export function verifyReceipt(root, bytes) {
       const wrong = [
         ['frozen.test', r.frozen.test, p.test],
         ['frozen.ticket', r.frozen.ticket, p.ticket],
-        ['recording.path', r.recording.path, p.recording],
       ].filter(([, got, want]) => got !== want);
       return !wrong.length || wrong.map(([k, got, want]) => `${k} is ${got}, not ${want}`).join('; ');
     }),
@@ -170,17 +143,14 @@ export function verifyReceipt(root, bytes) {
       const attempts = stateCommits.length - 1;
       return attempts === r.green.failed_attempts || `${attempts} failed attempts in the history, ${r.green.failed_attempts} in the receipt`;
     }),
-    check("the receipt is committed as it is, with Kane's recording", () => {
+    check('the receipt is committed as it is', () => {
       const commit = commitsChangingFile(root, p.receipt).find((c) => {
         const b = fileAt(root, c, p.receipt);
         return b && b.equals(bytes);
       });
       if (!commit) return `${p.receipt} is not committed with these exact contents`;
       const { green } = commits();
-      if (!isAncestor(root, green, commit)) return `green ${short(green)} is not an ancestor of the receipt commit ${short(commit)}`;
-      const files = recordingAt(root, commit, p.recording);
-      if (!files.length) return `${p.recording} is not in the receipt commit ${short(commit)}`;
-      return hashEntries(files) === r.recording.sha256 || `${p.recording} in ${short(commit)} does not match the receipt`;
+      return isAncestor(root, green, commit) || `green ${short(green)} is not an ancestor of the receipt commit ${short(commit)}`;
     }),
   ];
   return { receipt: r, checks };

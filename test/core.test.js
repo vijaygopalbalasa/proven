@@ -6,7 +6,7 @@ import { serveFolder } from '../src/serve.js';
 import { commitTreeAtPath } from '../src/git.js';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { canonicalJson, hashEntries, sha256 } from '../src/hash.js';
+import { canonicalJson, sha256 } from '../src/hash.js';
 import { findLeaks, scrubText } from '../src/leak.js';
 import { kaneCommand, loadConfig, settingsOf } from '../src/config.js';
 import { commitPaths, dirtyPaths } from '../src/git.js';
@@ -28,17 +28,6 @@ test('canonical JSON sorts keys at every level and ignores spacing', () => {
   assert.equal(canonicalJson({ b: 1, a: { d: [3, { z: 1, y: 2 }], c: null } }), '{"a":{"c":null,"d":[3,{"y":2,"z":1}]},"b":1}');
   assert.equal(sha256(canonicalJson({ x: 1, y: 2 })), sha256(canonicalJson({ y: 2, x: 1 })));
   assert.throws(() => canonicalJson({ n: NaN }));
-});
-
-test('a folder hash depends on paths and contents, not on order, and cannot be faked by a crafted path', () => {
-  const a = hashEntries([{ path: 'a.txt', content: Buffer.from('1') }, { path: 'b/c.txt', content: Buffer.from('2') }]);
-  const b = hashEntries([{ path: 'b/c.txt', content: Buffer.from('2') }, { path: 'a.txt', content: Buffer.from('1') }]);
-  const c = hashEntries([{ path: 'a.txt', content: Buffer.from('1') }, { path: 'b/c.txt', content: Buffer.from('3') }]);
-  assert.equal(a, b);
-  assert.notEqual(a, c);
-  // With joined "<sha>  <path>" lines, this one-file set would read the same as the two-file set above.
-  const crafted = hashEntries([{ path: `a.txt\n${sha256('2')}  b/c.txt`, content: Buffer.from('1') }]);
-  assert.notEqual(crafted, a);
 });
 
 test('the leak guard finds and hides emails, home paths, session folders and share links', () => {
