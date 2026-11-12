@@ -210,9 +210,11 @@ test('the gate: freeze, red, a failed attempt, did-not-run cases, green, receipt
   assert.match(r.stdout, /^ {2}note {2}red ran on fake \(PROVEN_KANE_BIN\), green ran on fake \(PROVEN_KANE_BIN\)$/m);
   assert.equal((r.stdout.match(/^ {2}ok /gm) ?? []).length, 10, r.stdout);
   assert.doesNotMatch(r.stdout, /FAIL/);
-  r = await repo.run(['verify', RECEIPT, '--replay']);
-  assert.equal(r.code, 2);
-  assert.match(r.stderr, /not built yet/);
+  // Requirement 4.3: Kane fails the frozen test again with the app at red, and passes it with the app at green.
+  r = await repo.run(['verify', RECEIPT, '--replay'], { scenario: ['red', 'green'] });
+  assert.equal(r.code, 0, r.stdout + r.stderr);
+  assert.match(r.stdout, /^ {2}ok {4}replay at red [0-9a-f]{7}: Kane failed step 2 \(Apply SAVE10\), as the receipt records$/m);
+  assert.match(r.stdout, /^ {2}ok {4}replay at green [0-9a-f]{7}: Kane passed all 2 steps, as the receipt records$/m);
 
   // Requirements 2.6 and 3.5: nothing private was ever committed, and the real Kane CLI was never called.
   assert.deepEqual(findCommittedLeaks(repo.dir, { calls: repo.kaneCalls() }), []);

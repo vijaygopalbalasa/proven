@@ -6,7 +6,7 @@
 // so the tests can prove Proven never commits them.
 import { spawn } from 'node:child_process';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
-import { appendFileSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { appendFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -30,21 +30,49 @@ const SCENARIOS = {
   hang: { hang: true },
 };
 
+// Flags after the test path that Kane CLI 0.10.4 has for testmd run: Proven may add only these.
+const KNOWN_FLAGS = new Set(['--agent', '--headless', '--no-adaptive-heal', '--author']);
+
 const args = process.argv.slice(2);
-const scenarioName = process.env.FAKE_KANE_SCENARIO;
-const scenario = SCENARIOS[scenarioName];
-if (args[0] !== 'testmd' || args[1] !== 'run' || !args[2]?.endsWith('_test.md') || !args.includes('--agent') || !args.includes('--headless')) {
+const extraArgs = args.slice(3).filter((a) => a !== '--agent' && a !== '--headless');
+if (
+  args[0] !== 'testmd' ||
+  args[1] !== 'run' ||
+  !args[2]?.endsWith('_test.md') ||
+  !args.includes('--agent') ||
+  !args.includes('--headless') ||
+  args.slice(3).some((a) => !KNOWN_FLAGS.has(a))
+) {
   process.stderr.write(`fake kane: unexpected arguments: ${args.join(' ')}\n`);
   process.exit(2);
 }
+// FAKE_KANE_SCENARIO is one scenario, or a comma-separated list for commands that run Kane more than once:
+// run n takes the n-th entry (the last one repeats), counted in the FAKE_KANE_COUNTER file.
+const scenarioName = pickScenario(process.env.FAKE_KANE_SCENARIO ?? '');
+const scenario = SCENARIOS[scenarioName];
 if (!scenario) {
   process.stderr.write(`fake kane: set FAKE_KANE_SCENARIO to one of ${Object.keys(SCENARIOS).join(', ')}\n`);
   process.exit(2);
 }
 
+function pickScenario(value) {
+  const list = value.split(',').map((x) => x.trim()).filter(Boolean);
+  if (list.length < 2) return list[0];
+  const counter = process.env.FAKE_KANE_COUNTER;
+  if (!counter) {
+    process.stderr.write('fake kane: a scenario list needs FAKE_KANE_COUNTER\n');
+    process.exit(2);
+  }
+  const n = existsSync(counter) ? Number(readFileSync(counter, 'utf8')) || 0 : 0;
+  writeFileSync(counter, String(n + 1));
+  return list[Math.min(n, list.length - 1)];
+}
+
 const testPath = resolve(process.cwd(), args[2]);
 const testText = readFileSync(testPath, 'utf8');
 const stem = basename(testPath).replace(/_test\.md$/, '');
+// Kane replays the steps it has recorded in output-<stem>/ next to the test, and authors the rest.
+const recordingBefore = existsSync(join(dirname(testPath), `output-${stem}`, 'Result.md'));
 const steps = [];
 for (const line of testText.split('\n')) {
   const h = /^##\s+(.*\S)\s*$/.exec(line);
@@ -83,6 +111,8 @@ function log(extra = {}) {
     JSON.stringify({
       scenario: scenarioName,
       args,
+      extra_args: extraArgs,
+      recording_before: recordingBefore,
       session_id: sessionId,
       share_url: shareUrl,
       session_dir: sessionDir,

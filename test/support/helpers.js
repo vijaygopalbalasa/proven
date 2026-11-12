@@ -80,19 +80,24 @@ export async function makeRepo(t, { timeoutS = 60, maxAttempts = 4 } = {}) {
   chmodSync(join(shim, 'kane-cli'), 0o755);
 
   const log = join(dir, '.git', 'fake-kane.log');
+  const counter = join(dir, '.git', 'fake-kane.count');
   const repo = {
     dir,
     url: `http://127.0.0.1:${await freePort()}/`,
     log,
     // realKane: true leaves PROVEN_KANE_BIN unset, so Proven would reach for kane-cli (the shim).
-    run: (args, { scenario, env, realKane = false } = {}) =>
-      runProven(dir, args, {
+    // scenario is one fake Kane scenario, or a list for a command that runs Kane more than once (in order).
+    run: (args, { scenario, env, realKane = false } = {}) => {
+      rmSync(counter, { force: true });
+      return runProven(dir, args, {
         PROVEN_KANE_BIN: realKane ? undefined : FAKE_KANE,
-        FAKE_KANE_SCENARIO: scenario,
+        FAKE_KANE_SCENARIO: Array.isArray(scenario) ? scenario.join(',') : scenario,
+        FAKE_KANE_COUNTER: counter,
         FAKE_KANE_LOG: log,
         PATH: `${shim}:${process.env.PATH}`,
         ...env,
-      }),
+      });
+    },
     git: (...args) => git(dir, ...args),
     read: (rel) => readFileSync(join(dir, rel), 'utf8'),
     write: (rel, text) => {
