@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { Refusal } from './errors.js';
-import { changedPaths, commitsTouchingOldestFirst, fileAt, git, parentOf, resolveCommit, short } from './git.js';
+import { changedPaths, commitsTouchingOldestFirst, fileAt, git, objectAt, parentOf, resolveCommit, short } from './git.js';
 import { canonicalJson } from './hash.js';
 import { assertClean } from './leak.js';
 import { ticketPaths } from './ticket.js';
@@ -139,7 +139,8 @@ export function stateRounds(root, id, L) {
 
 // Cheap invariants on the red record, which an agent with a shell could otherwise rewrite: every field is present
 // (nothing is assumed), the first state commit after the lock sits right on the lock commit and records red there,
-// a reopen sits right on its own red commit, and no later state commit in a round changes that round's red record.
+// a reopen sits right on its own red commit, every red names the app tree that its commit holds (what Kane judged),
+// and no later state commit in a round changes that round's red record.
 export function checkRedRecord(root, id, state, lock) {
   const p = ticketPaths(id);
   const red = state.red;
@@ -167,6 +168,11 @@ export function checkRedRecord(root, id, state, lock) {
     }
     if (r.first.red?.commit !== r.redCommit) {
       throw new Refusal(`The red record in ${p.state} at ${short(r.start)} names ${short(r.first.red?.commit)}, but red was recorded on ${short(r.redCommit)}. A person needs to look at ${id}.`);
+    }
+    const app = lock.settings?.app;
+    const tree = typeof app === 'string' ? objectAt(root, r.redCommit, app) : null;
+    if (!tree || r.first.red.app_tree !== tree) {
+      throw new Refusal(`The red record in ${p.state} at ${short(r.start)} names app tree ${short(r.first.red.app_tree)}, but the app at ${short(r.redCommit)} is ${short(tree)}. A person needs to look at ${id}.`);
     }
     for (const c of r.commits.slice(1)) {
       const later = readStateAt(root, id, c);

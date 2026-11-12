@@ -1,5 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { sha256 } from '../src/hash.js';
 import { sealReceipt } from '../src/receipt.js';
 import { couponTicket, greenRepo, makeRepo } from './support/helpers.js';
 import { findCommittedLeaks } from './support/scan.js';
@@ -62,6 +65,8 @@ test('recheck reopens a done ticket that a later change broke, and done closes i
   assert.equal(state.red.commit, R2);
   assert.equal(state.red.app_tree, repo.git('rev-parse', `${R2}:demo/app`));
   assert.equal(state.red.failed_step, 2);
+  assert.match(state.red.kane_reason, /total remains \$20\.00/);
+  assert.equal(state.red.evidence_sha256, sha256(readFileSync(join(repo.dir, '.testmuai/evidence', `${confirm.evidence_id}.evidence`))));
   assert.equal(state.red.kane, 'fake (PROVEN_KANE_BIN)');
   assert.equal(state.reopened.replay.kane_one_liner, 'Applying SAVE10 leaves the $20.00 cart total unchanged instead of showing $18.00.');
   assert.deepEqual(state.reopened.previous, {
@@ -102,6 +107,7 @@ test('recheck reopens a done ticket that a later change broke, and done closes i
   // Both receipts verify with git alone; the new one also checks the one it links.
   r = await repo.run(['verify', RECEIPT]);
   assert.equal(r.code, 0, r.stdout);
+  assert.match(r.stdout, /^ {2}note {2}this receipt follows a reopen by proven recheck: re-check it with --replay for full assurance$/m);
   assert.equal(okLines(r.stdout).length, 11, r.stdout);
   assert.ok(okLines(r.stdout).includes('the earlier receipt it links is committed, verifies, and came before this red'));
   assert.ok(okLines(r.stdout).includes('the lock was written once, right after the frozen commit, and pins these settings'));
@@ -109,11 +115,16 @@ test('recheck reopens a done ticket that a later change broke, and done closes i
   r = await repo.run(['verify', 'receipts/T-1.earlier.json']);
   assert.equal(r.code, 0, r.stdout);
   assert.equal(okLines(r.stdout).length, 10);
+  assert.doesNotMatch(r.stdout, /follows a reopen/);
 
   // The replay re-checks the new red too: the app at the reopen commit fails, the agent's fix passes.
   r = await repo.run(['verify', RECEIPT, '--replay'], { scenario: ['red', 'green'] });
   assert.equal(r.code, 0, r.stdout);
   assert.match(r.stdout, new RegExp(`replay at red ${R2.slice(0, 7)}: Kane failed step 2 \\(Apply SAVE10\\), as the receipt records`));
+  assert.doesNotMatch(r.stdout, /follows a reopen/, 'the replay is the full check');
+  r = await repo.run(['verify', RECEIPT, '--replay'], { scenario: 'not-started' });
+  assert.equal(r.code, 0, r.stdout);
+  assert.match(r.stdout, /follows a reopen by proven recheck: re-check it with --replay for full assurance/, 'a skipped replay is not the full check');
 
   // A recheck now finds every done ticket passing and changes nothing.
   const before = repo.head();
@@ -200,6 +211,13 @@ test('a reopen that Proven did not write is refused', async (t) => {
   let r = await repo.run(['done', 'T-1'], { scenario: 'green' });
   assert.equal(r.code, 2);
   assert.match(r.stderr, /The reopen commit [0-9a-f]{7} of T-1 does not sit on the commit it names as red\./);
+  repo.git('reset', '-q', '--hard', good);
+
+  // A reopen on its own commit, but naming an app tree Kane never judged there.
+  forge({ ...state, status: 'reopened', attempts: 0, red: { ...state.red, commit: good } }, 'T-1: reopened at x, step 2 failed');
+  r = await repo.run(['done', 'T-1'], { scenario: 'green' });
+  assert.equal(r.code, 2);
+  assert.match(r.stderr, /The red record in \.proven\/state\/T-1\.json at [0-9a-f]{7} names app tree [0-9a-f]{7}, but the app at [0-9a-f]{7} is [0-9a-f]{7}\./);
   repo.git('reset', '-q', '--hard', good);
 
   // An attempt recorded after done, to reopen a round without a recheck.

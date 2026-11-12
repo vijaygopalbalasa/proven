@@ -43,6 +43,10 @@ export async function cmdVerify({ cwd, out }, [file], flags) {
     }
   }
   if (caveat) out.say(`  note  red ran on ${kanes[0]}, green ran on ${kanes[1]}`);
+  // A later close starts from a reopen, which only Proven's own commits vouch for, so git alone is weaker there.
+  if (receipt?.previous !== undefined && replay?.agreed !== true) {
+    out.say('  note  this receipt follows a reopen by proven recheck: re-check it with --replay for full assurance');
+  }
   if (replay) {
     if (replay.agreed === true) out.say('Kane ran the frozen test again: it failed without the change and passed with it.');
     else if (replay.agreed === null) out.say(ok ? 'Kane did not run again, so the git checks stand.' : 'Kane did not run again.');

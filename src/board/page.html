@@ -202,7 +202,7 @@
         h('p', { class: 'plain' }, h('strong', null, `Kane passed all ${t.green.steps_total} steps`), t.green.failed_attempts ? `, after ${plural(t.green.failed_attempts, 'failed attempt', 'failed attempts')}.` : '.'),
         h('p', { class: 'meta' }, facts([`green ${short(t.green.commit)}`, t.green.credits != null && `${t.green.credits} credits`, t.green.duration_s != null && `${t.green.duration_s} s`])),
         h('p', { class: 'meta' }, 'Receipt ', h('a', { href: `/${r.path}` }, short(r.sha256)), ` verifies with git, ${r.checks} checks.`),
-        r.earlier.length ? h('p', { class: 'meta' }, `It links the earlier receipt ${short(r.earlier[0].sha256)}, which proven recheck reopened.`) : null,
+        r.earlier.length ? h('p', { class: 'meta' }, `It links the earlier receipt ${short(r.earlier[0].sha256)}, which proven recheck reopened. For full assurance: proven verify ${r.path} --replay`) : null,
         t.note && t.note.startsWith('Done, but') ? h('p', { class: 'problem' }, t.note) : null,
       );
     }

@@ -167,7 +167,7 @@ export function ticketCard(root, id) {
   const fake = [receipt.red.kane, receipt.green.kane].some((k) => k !== 'kane-cli');
   card.note = fake
     ? 'Done, but this receipt was not made with Kane CLI.'
-    : `Done: the receipt verifies with git (${checks.length} checks).${earlier.length ? ` Closed ${earlier.length + 1} times: proven recheck reopened it before.` : ''}`;
+    : `Done: the receipt verifies with git (${checks.length} checks).${earlier.length ? ` Closed ${earlier.length + 1} times: proven recheck reopened it before, so re-check it with --replay for full assurance.` : ''}`;
   return card;
 }
 
