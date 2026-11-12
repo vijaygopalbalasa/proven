@@ -12,10 +12,10 @@ import {
   rmSync,
   writeFileSync,
 } from 'node:fs';
+import { createServer as createNetServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { startServer } from '../../demo/server.js';
 
 export const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 export const PROVEN = join(ROOT, 'bin', 'proven.js');
@@ -39,10 +39,21 @@ export function runProven(cwd, args, env = {}) {
   });
 }
 
-// A temporary git repo holding a copy of the demo shop, served for real. Proven runs with the test-only
-// PROVEN_KANE_BIN pointing at the fake Kane; a kane-cli shim first on PATH fails loudly if anything reaches for
-// the real Kane CLI instead.
-export async function makeRepo(t, { timeoutS = 60, maxAttempts = 4, serve = true } = {}) {
+// A free local port. Proven itself serves the app snapshot on the start URL's port while Kane runs.
+export function freePort() {
+  return new Promise((done, fail) => {
+    const s = createNetServer();
+    s.once('error', fail);
+    s.listen(0, '127.0.0.1', () => {
+      const { port } = s.address();
+      s.close(() => done(port));
+    });
+  });
+}
+
+// A temporary git repo holding a copy of the demo shop. Proven runs with the test-only PROVEN_KANE_BIN pointing at
+// the fake Kane; a kane-cli shim first on PATH fails loudly if anything reaches for the real Kane CLI instead.
+export async function makeRepo(t, { timeoutS = 60, maxAttempts = 4 } = {}) {
   const dir = realpathSync(mkdtempSync(join(tmpdir(), 'proven-test-')));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   cpSync(join(ROOT, 'demo', 'app'), join(dir, 'demo', 'app'), { recursive: true });
@@ -65,15 +76,10 @@ export async function makeRepo(t, { timeoutS = 60, maxAttempts = 4, serve = true
   writeFileSync(join(shim, 'kane-cli'), '#!/bin/sh\necho "the real kane-cli was called in a test" >&2\ntouch "$0.called"\nexit 99\n');
   chmodSync(join(shim, 'kane-cli'), 0o755);
 
-  let server = null;
-  if (serve) {
-    server = await startServer({ root: join(dir, 'demo', 'app') });
-    t.after(() => server.close());
-  }
   const log = join(dir, '.git', 'fake-kane.log');
   const repo = {
     dir,
-    url: server ? server.url : null,
+    url: `http://127.0.0.1:${await freePort()}/`,
     log,
     // realKane: true leaves PROVEN_KANE_BIN unset, so Proven would reach for kane-cli (the shim).
     run: (args, { scenario, env, realKane = false } = {}) =>

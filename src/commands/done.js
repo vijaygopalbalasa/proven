@@ -6,6 +6,7 @@ import { displayPath, failingScreenshot, saveScreenshot } from '../evidence.js';
 import {
   assertOnlyPaths,
   commitPaths,
+  commitTreeAtPath,
   commitsTouching,
   fileAt,
   head,
@@ -19,7 +20,7 @@ import { hashEntries, sha256 } from '../hash.js';
 import { findLeaks } from '../leak.js';
 import { checkFrozenTest } from '../lock.js';
 import { RECORDING_EXCLUDES, recordingAt, recordingFromWorktree, sealReceipt } from '../receipt.js';
-import { appFingerprint, appHashAt, appRefusal, kaneWords, runFrozenTest } from '../run.js';
+import { kaneWords, runFrozenTest } from '../run.js';
 import { checkAttemptHistory, checkRedRecord, loadState, statusOf, writeJson, writeState } from '../state.js';
 import { checkId, parseTicket, ticketPaths } from '../ticket.js';
 
@@ -68,7 +69,7 @@ export async function cmdDone(ctx, [id]) {
   }
   if (status !== 'red' && status !== 'in-progress') throw new Refusal(`${p.state} has an unknown status "${status}".`);
 
-  checkRedRecord(root, id, state);
+  checkRedRecord(root, id, state, lock);
   const redKane = state.red.kane;
   if (redKane !== kane.label) {
     throw new Refusal(`${id} went red on ${redKane}, but this run would use ${kane.label}. Red and green must run on the same Kane.`);
@@ -141,12 +142,7 @@ export async function cmdDone(ctx, [id]) {
   // Kane passed. Every check runs before anything is committed.
   if (!isAncestor(root, redCommit, 'HEAD')) throw new Refusal(`The red commit ${short(redCommit)} is not an ancestor of HEAD.`);
   if (sha256(readFileSync(join(root, p.test))) !== lock.test_sha256) throw new Refusal(`${p.test} is not byte-identical to its lock.`);
-  const unsafe = appRefusal(root, config.app);
-  if (unsafe || appFingerprint(root, config.app) !== run.appJudged) {
-    out.both(`did not run: ${unsafe ?? `${config.app} changed after Kane ran`}\nNo attempt was counted.`);
-    return 2;
-  }
-  if (run.appJudged === appHashAt(root, redCommit, config.app)) {
+  if (run.appTree === state.red.app_tree) {
     out.both(
       `did not run: Kane passed, but ${config.app} is the same as at red ${short(redCommit)}. A pass on unchanged code proves nothing, so ${id} stays open.\nNo attempt was counted.`,
     );
@@ -164,16 +160,11 @@ export async function cmdDone(ctx, [id]) {
   const frozenTicket = fileAt(root, lock.frozen_commit, p.ticket);
   const ticket = parseTicket(frozenTicket ? frozenTicket.toString('utf8') : '', id);
 
-  // G: the app folder exactly as Kane judged it.
-  const g = commitPaths(root, { paths: [config.app], message: `${id}: app change that Kane passed` });
+  // G: exactly the tree Kane judged, built from that tree and not from the working tree.
+  const g = commitTreeAtPath(root, { path: config.app, tree: run.appTree, message: `${id}: app change that Kane passed` });
   if (g.created) assertOnlyPaths(root, g.commit, [config.app]);
   const G = g.commit;
-  if (appHashAt(root, G, config.app) !== run.appJudged) {
-    throw new Error(`${config.app} at ${short(G)} is not the code Kane judged`);
-  }
-  if (objectAt(root, G, config.app) === objectAt(root, redCommit, config.app)) {
-    throw new Error(`${config.app} at green ${short(G)} is the same as at red ${short(redCommit)}`);
-  }
+  if (objectAt(root, G, config.app) !== run.appTree) throw new Error(`${config.app} at ${short(G)} is not the tree Kane judged`);
 
   const red = state.red;
   const receipt = sealReceipt({
@@ -199,6 +190,7 @@ export async function cmdDone(ctx, [id]) {
       kane_cli: red.kane_cli,
       duration_s: red.duration_s,
       credits: red.credits,
+      app_tree: red.app_tree,
     },
     green: {
       commit: G,
@@ -210,6 +202,7 @@ export async function cmdDone(ctx, [id]) {
       duration_s: run.durationS,
       credits: run.credits,
       failed_attempts: state.attempts,
+      app_tree: run.appTree,
     },
     recording: { path: p.recording, sha256: hashEntries(recordingFiles) },
   });
@@ -220,7 +213,7 @@ export async function cmdDone(ctx, [id]) {
     {
       ...state,
       status: 'done',
-      green: { commit: G, steps_passed: run.stepsPassed, evidence_sha256: run.evidenceSha256, kane: kane.label, kane_cli: run.kaneVersion, at },
+      green: { commit: G, app_tree: run.appTree, steps_passed: run.stepsPassed, evidence_sha256: run.evidenceSha256, kane: kane.label, kane_cli: run.kaneVersion, at },
       receipt: p.receipt,
     },
     { exact: run.exact },

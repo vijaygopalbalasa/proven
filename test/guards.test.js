@@ -1,7 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { rmSync, symlinkSync } from 'node:fs';
+import { readFileSync, symlinkSync } from 'node:fs';
 import { join } from 'node:path';
+import { sha256 } from '../src/hash.js';
 import { couponTicket, fixCoupon, makeRepo } from './support/helpers.js';
 
 const STATE = '.proven/state/T-1.json';
@@ -115,47 +116,98 @@ test('done refuses when the frozen test was changed in a commit after red, even 
   assert.equal(repo.kaneCalls().length, 1);
 });
 
-test('red and done refuse an app folder holding files git ignores, which G would not keep', async (t) => {
+test('Kane judges a snapshot of the app: ignored files are never served, and edits during the run never reach G', async (t) => {
   const repo = await makeRepo(t);
   repo.write('tickets/T-1.md', couponTicket(repo.url));
   assert.equal((await repo.run(['freeze', 'T-1'])).code, 0);
-  repo.write('demo/app/.DS_Store', 'ignored by .gitignore, but the server would still serve it');
+
+  // A file git ignores is on disk but not in the snapshot, so Kane cannot see it.
+  repo.write('demo/app/.DS_Store', 'ignored by .gitignore');
+  let r = await repo.run(['red', 'T-1'], { scenario: 'red', env: { FAKE_KANE_FETCH: '/.DS_Store,/cart.js' } });
+  assert.equal(r.code, 0, r.stderr);
+  assert.match(r.stderr, /Kane will not see 1 file that git ignores in demo\/app: demo\/app\/\.DS_Store/);
+  let fetched = repo.kaneCalls().at(-1).fetched;
+  assert.equal(fetched['/.DS_Store'].status, 404);
+  assert.equal(fetched['/cart.js'].sha256, sha256(readFileSync(join(repo.dir, 'demo/app/cart.js'))));
+  assert.equal(repo.json(STATE).red.app_tree, repo.git('rev-parse', 'HEAD~1:demo/app'));
+
+  // The agent's uncommitted fix is what Kane sees. A file written while Kane runs is not served and not committed.
+  fixCoupon(repo);
+  const fixed = sha256(readFileSync(join(repo.dir, 'demo/app/cart.js')));
+  r = await repo.run(['done', 'T-1'], {
+    scenario: 'green-changes-app',
+    env: { FAKE_KANE_TOUCH: join(repo.dir, 'demo/app/late.js'), FAKE_KANE_FETCH: '/late.js,/cart.js' },
+  });
+  assert.equal(r.code, 0, r.stderr);
+  fetched = repo.kaneCalls().at(-1).fetched;
+  assert.equal(fetched['/late.js'].status, 404);
+  assert.equal(fetched['/cart.js'].sha256, fixed);
+  const receipt = repo.json('receipts/T-1.json');
+  const G = receipt.green.commit;
+  assert.equal(repo.git('rev-parse', `${G}:demo/app`), receipt.green.app_tree);
+  assert.deepEqual(repo.changed(G), ['demo/app/cart.js']);
+  assert.equal(repo.git('ls-tree', '--name-only', G, 'demo/app/late.js'), '');
+  assert.equal(repo.exists('demo/app/late.js'), true);
+  assert.equal(repo.git('status', '--porcelain', '--', 'demo/app'), '?? demo/app/late.js');
+  assert.equal((await repo.run(['verify', 'receipts/T-1.json'])).code, 0);
+});
+
+test('red must run on the commit that locked the test; freezing again moves the lock', async (t) => {
+  const repo = await makeRepo(t);
+  repo.write('tickets/T-1.md', couponTicket(repo.url));
+  repo.write('tickets/T-2.md', couponTicket(repo.url).replace('# T-1:', '# T-2:'));
+  assert.equal((await repo.run(['freeze', 'T-1'])).code, 0);
+  assert.equal((await repo.run(['freeze', 'T-2'])).code, 0);
+
   let r = await repo.run(['red', 'T-1'], { scenario: 'red' });
   assert.equal(r.code, 2);
-  assert.match(r.stderr, /demo\/app holds files that git ignores: demo\/app\/\.DS_Store\./);
-  rmSync(join(repo.dir, 'demo/app/.DS_Store'));
+  assert.match(r.stderr, /T-1 must go red on the commit that locked its test \([0-9a-f]{7}\), but HEAD has moved since\. Run proven freeze T-1 again, then proven red T-1 right after it\./);
+  assert.equal(repo.kaneCalls().length, 0);
+
+  r = await repo.run(['freeze', 'T-1']);
+  assert.equal(r.code, 0, r.stderr);
+  assert.match(r.stdout, /Frozen T-1 again on the current commit/);
+  const lock = repo.json('tickets/T-1.lock.json');
+  assert.equal(repo.git('rev-parse', 'HEAD~1'), lock.frozen_commit);
+  assert.deepEqual(repo.changed(lock.frozen_commit), []);
+  assert.deepEqual(repo.changed('HEAD'), ['tickets/T-1.lock.json']);
   assert.equal((await repo.run(['red', 'T-1'], { scenario: 'red' })).code, 0);
 
-  fixCoupon(repo);
-  repo.write('demo/app/.DS_Store', 'again');
-  r = await repo.run(['done', 'T-1'], { scenario: 'green' });
+  r = await repo.run(['freeze', 'T-1']);
   assert.equal(r.code, 2);
-  assert.match(r.stderr, /demo\/app holds files that git ignores/);
-  rmSync(join(repo.dir, 'demo/app/.DS_Store'));
-  assert.equal(repo.kaneCalls().length, 1);
+  assert.match(r.stderr, /would move the goalposts/);
+});
 
-  // One that appears while Kane runs is caught before G is committed.
-  const before = repo.head();
-  r = await repo.run(['done', 'T-1'], { scenario: 'green-changes-app', env: { FAKE_KANE_TOUCH: join(repo.dir, 'demo/app/.DS_Store') } });
+test('the lock chain: the lock is written once after F, and red sits on the lock commit', async (t) => {
+  const repo = await redRepo(t);
+  fixCoupon(repo);
+  const good = repo.head();
+  const lockText = repo.read('tickets/T-1.lock.json');
+
+  // A second write of the lock after F, even with the same pins, breaks the chain.
+  repo.write('tickets/T-1.lock.json', lockText.replace('\n}', ',\n  "note": "again"\n}'));
+  repo.git('commit', '-q', '-am', 'T-1: lock frozen test again');
+  let r = await repo.run(['done', 'T-1'], { scenario: 'green' });
   assert.equal(r.code, 2);
-  both(r, /did not run: demo\/app holds files that git ignores: demo\/app\/\.DS_Store\./);
-  both(r, /No attempt was counted\./);
-  assert.equal(repo.head(), before);
-  assert.equal(repo.exists('receipts/T-1.json'), false);
+  assert.match(r.stderr, /tickets\/T-1\.lock\.json was written 2 times after its frozen commit/);
+  repo.git('reset', '-q', '--hard', good);
+  fixCoupon(repo);
+  assert.equal((await repo.run(['done', 'T-1'], { scenario: 'green' })).code, 0);
 });
 
 test('red and done refuse symlinks in the app folder', async (t) => {
   const repo = await makeRepo(t);
-  repo.write('tickets/T-1.md', couponTicket(repo.url));
-  assert.equal((await repo.run(['freeze', 'T-1'])).code, 0);
   symlinkSync('cart.js', join(repo.dir, 'demo/app/linked.js'));
   repo.git('add', 'demo/app/linked.js');
   repo.git('commit', '-q', '-m', 'Add a link');
+  repo.write('tickets/T-1.md', couponTicket(repo.url));
+  assert.equal((await repo.run(['freeze', 'T-1'])).code, 0);
   let r = await repo.run(['red', 'T-1'], { scenario: 'red' });
   assert.equal(r.code, 2);
   assert.match(r.stderr, /demo\/app holds a symlink: demo\/app\/linked\.js\./);
   repo.git('rm', '-q', 'demo/app/linked.js');
   repo.git('commit', '-q', '-m', 'Remove the link');
+  assert.equal((await repo.run(['freeze', 'T-1'])).code, 0);
   assert.equal((await repo.run(['red', 'T-1'], { scenario: 'red' })).code, 0);
 
   fixCoupon(repo);

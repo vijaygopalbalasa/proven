@@ -15,16 +15,10 @@ export function canonicalJson(value) {
   return '{' + keys.map((k) => JSON.stringify(k) + ':' + canonicalJson(value[k])).join(',') + '}';
 }
 
-// Hash of a tree the way git stores it: mode, content (link text for symlinks) and path for each file.
-export function hashTree(entries) {
-  const sorted = [...entries].sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
-  return sha256(sorted.map((e) => `${e.mode} ${sha256(e.content)}  ${e.path}\n`).join(''));
-}
-
-// Hash of a set of files: sha256 over "<sha256 of content>  <path>\n" lines sorted by path.
+// Hash of a set of files: sha256 of the canonical JSON of [path, sha256 of content] pairs, sorted by path.
 // The same files give the same hash whether they are read from the working tree or from a commit.
+// (The app folder is fingerprinted by its git tree id instead; see snapshot.js.)
 export function hashEntries(entries) {
-  const sorted = [...entries].sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
-  const manifest = sorted.map((e) => `${sha256(e.content)}  ${e.path}\n`).join('');
-  return sha256(manifest);
+  const pairs = entries.map((e) => [e.path, sha256(e.content)]).sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0));
+  return sha256(canonicalJson(pairs));
 }

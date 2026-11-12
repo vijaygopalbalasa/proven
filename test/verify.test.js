@@ -102,7 +102,16 @@ test('verify: settings that differ from the lock are a MISMATCH', async (t) => {
   forge(repo, (r) => (r.settings.max_attempts = 99));
   const r = await repo.run(['verify', RECEIPT]);
   assert.equal(r.code, 1);
-  assert.deepEqual(failed(r.stdout), ['the lock, in its own commit after the frozen commit, names it and pins these settings']);
+  assert.deepEqual(failed(r.stdout), ['the lock was written once, right after the frozen commit, pins these settings, and red sits on it']);
+});
+
+test('verify: app trees that do not match the red and green commits are a MISMATCH', async (t) => {
+  const repo = await greenRepo(t);
+  forge(repo, (r) => (r.green.app_tree = r.red.app_tree));
+  const r = await repo.run(['verify', RECEIPT]);
+  assert.equal(r.code, 1);
+  assert.deepEqual(failed(r.stdout), ['the app at red and green matches the receipt, and changed']);
+  assert.match(r.stdout, /green\.app_tree is not the app at green [0-9a-f]{7}/);
 });
 
 test('verify: a red that the state history does not show is a MISMATCH', async (t) => {

@@ -2,10 +2,10 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { settingsOf } from '../config.js';
 import { Refusal } from '../errors.js';
-import { assertOnlyPaths, commitPaths, fileAt, resolveCommit, short } from '../git.js';
+import { assertOnlyPaths, commitPaths, fileAt, head, resolveCommit, short } from '../git.js';
 import { canonicalJson, sha256 } from '../hash.js';
 import { readLock, settingsSha } from '../lock.js';
-import { loadState, statusOf, writeJson } from '../state.js';
+import { loadState, lockChain, statusOf, writeJson } from '../state.js';
 import { checkId, parseTicket, renderTest, ticketPaths, ticketProblems } from '../ticket.js';
 
 // proven freeze T-N: write the test, commit ticket + test as F, then the lock naming F in its own commit.
@@ -44,19 +44,35 @@ export async function cmdFreeze({ root, config, out }, [id]) {
   const testSha = sha256(testText);
   const settings = settingsOf(config, ticket.url);
 
-  // Same ticket, same test, same settings, and the lock's commit still holds them: nothing to do.
+  // Same ticket, same test, same settings, and the lock's commit still holds them: nothing to freeze. If HEAD has
+  // moved since the lock and there is no red yet, freeze again on the current commit, because red must sit on the
+  // commit that holds the lock.
+  let again = false;
   if (oldLock && oldLock.ticket_sha256 === ticketSha && oldLock.test_sha256 === testSha && oldLock.settings_sha256 === settingsSha(settings)) {
     const F = resolveCommit(root, oldLock.frozen_commit);
     const atF = F && fileAt(root, F, p.test);
     const testNow = existsSync(join(root, p.test)) ? readFileSync(join(root, p.test)) : null;
     if (atF && sha256(atF) === testSha && testNow && sha256(testNow) === testSha) {
-      out.say(`${id} is already frozen at ${short(F)}. Nothing changed.`);
-      return 0;
+      let L = null;
+      try {
+        L = lockChain(root, id, oldLock);
+      } catch {
+        L = null;
+      }
+      if ((L && head(root) === L) || status !== 'frozen') {
+        out.say(`${id} is already frozen at ${short(F)}. Nothing changed.`);
+        return 0;
+      }
+      again = true;
     }
   }
 
   writeFileSync(join(root, p.test), testText);
-  const f = commitPaths(root, { paths: [p.ticket, p.test], message: `${id}: freeze ticket and test` });
+  const f = commitPaths(root, {
+    paths: [p.ticket, p.test],
+    message: again ? `${id}: freeze ticket and test again` : `${id}: freeze ticket and test`,
+    allowEmpty: again,
+  });
   if (f.created) assertOnlyPaths(root, f.commit, [p.ticket, p.test]);
 
   const lock = {
@@ -77,9 +93,9 @@ export async function cmdFreeze({ root, config, out }, [id]) {
   const l = commitPaths(root, { paths: [p.lock], message: `${id}: lock frozen test (F ${short(f.commit)})` });
   assertOnlyPaths(root, l.commit, [p.lock]);
 
-  out.say(`Frozen ${id}: ticket and test in ${short(f.commit)}, lock in ${short(l.commit)}.`);
+  out.say(`Frozen ${id}${again ? ' again on the current commit' : ''}: ticket and test in ${short(f.commit)}, lock in ${short(l.commit)}.`);
   const n = ticket.criteria.length;
   out.say(`${p.test} has ${n + 1} steps: the landmark check, then ${n} ${n === 1 ? 'criterion' : 'criteria'}.`);
-  out.say(`Next: start the app, then run proven red ${id}`);
+  out.say(`Next: run proven red ${id} right away. Red must sit on this lock commit, and Proven serves the app itself.`);
   return 0;
 }

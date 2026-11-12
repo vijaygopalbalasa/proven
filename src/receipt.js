@@ -9,7 +9,6 @@ import {
   commitsTouchingOldestFirst,
   fileAt,
   isAncestor,
-  lastCommitTouching,
   objectAt,
   parentOf,
   resolveCommit,
@@ -108,19 +107,21 @@ export function verifyReceipt(root, bytes) {
       if (!k || sha256(k) !== r.frozen.ticket_sha256) return `${p.ticket} at ${short(F)} has a different sha256`;
       return true;
     }),
-    check('the lock, in its own commit after the frozen commit, names it and pins these settings', () => {
-      const { F, red } = commits();
-      const buf = fileAt(root, red, p.lock);
-      if (!buf) return `${p.lock} is not in red ${short(red)}`;
-      const lock = JSON.parse(buf.toString('utf8'));
+    check('the lock was written once, right after the frozen commit, pins these settings, and red sits on it', () => {
+      const { F, red, green } = commits();
+      const writes = commitsTouchingOldestFirst(root, F, green, p.lock);
+      if (writes.length !== 1) return `${p.lock} was written ${writes.length} times between the frozen commit and green`;
+      const L = writes[0];
+      if (parentOf(root, L) !== F) return `the lock commit ${short(L)} does not sit right on the frozen commit ${short(F)}`;
+      const changed = changedPaths(root, L);
+      if (changed.length !== 1 || changed[0] !== p.lock) return `the lock commit ${short(L)} holds other files too`;
+      if (L !== red) return `red ${short(red)} is not the lock commit ${short(L)}`;
+      const lock = JSON.parse(fileAt(root, L, p.lock).toString('utf8'));
       if (resolveCommit(root, lock.frozen_commit) !== F) return `the lock names ${short(lock.frozen_commit)}, not ${short(F)}`;
       if (lock.test_sha256 !== r.frozen.test_sha256 || lock.ticket_sha256 !== r.frozen.ticket_sha256) return 'the lock pins other test or ticket hashes';
       const want = settingsSha(r.settings);
       if (lock.settings_sha256 !== want || !lock.settings || settingsSha(lock.settings) !== want) return 'the lock pins other settings';
-      const L = lastCommitTouching(root, red, p.lock);
-      if (!L || L === F || !isAncestor(root, F, L)) return `the lock was not committed after ${short(F)}`;
-      const changed = changedPaths(root, L);
-      return (changed.length === 1 && changed[0] === p.lock) || `the lock commit ${short(L)} holds other files too`;
+      return true;
     }),
     check('the test was frozen before red', () => {
       const { F, red } = commits();
@@ -142,11 +143,12 @@ export function verifyReceipt(root, bytes) {
       }
       return true;
     }),
-    check('the app changed between red and green', () => {
+    check('the app at red and green matches the receipt, and changed', () => {
       const { red, green } = commits();
       const a = objectAt(root, red, app);
       const b = objectAt(root, green, app);
-      if (!b) return `${app} is not in green ${short(green)}`;
+      if (a !== r.red.app_tree) return `red.app_tree is not the app at red ${short(red)}`;
+      if (b !== r.green.app_tree) return `green.app_tree is not the app at green ${short(green)}`;
       return a !== b || `${app} is the same at red and green`;
     }),
     check('the state history records this red, then one commit per failed attempt', () => {

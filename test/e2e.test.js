@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createServer } from 'node:net';
+import { createServer } from 'node:http';
 import { existsSync, readFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { canonicalJson, sha256 } from '../src/hash.js';
@@ -13,16 +13,6 @@ const RECEIPT = 'receipts/T-1.json';
 function both(r, re) {
   assert.match(r.stdout, re, `stdout: ${r.stdout}`);
   assert.match(r.stderr, re, `stderr: ${r.stderr}`);
-}
-
-function freePort() {
-  return new Promise((resolve) => {
-    const s = createServer();
-    s.listen(0, '127.0.0.1', () => {
-      const { port } = s.address();
-      s.close(() => resolve(port));
-    });
-  });
 }
 
 test('the gate: freeze, red, a failed attempt, did-not-run cases, green, receipt, verify', async (t) => {
@@ -162,13 +152,8 @@ test('the gate: freeze, red, a failed attempt, did-not-run cases, green, receipt
   assert.equal(repo.kaneCalls().length, calls);
   repo.git('checkout', '--', 'tickets/T-1_test.md');
 
-  // The agent fixes the app. A change to the app while Kane runs voids the run.
+  // The agent fixes the app.
   fixCoupon(repo);
-  r = await repo.run(['done', 'T-1'], { scenario: 'green-changes-app', env: { FAKE_KANE_TOUCH: join(repo.dir, 'demo/app/notes.txt') } });
-  assert.equal(r.code, 2);
-  both(r, /did not run: demo\/app changed while Kane ran/);
-  rmSync(join(repo.dir, 'demo/app/notes.txt'));
-  assert.equal(repo.json(STATE).attempts, 2);
 
   // Requirement 3.4: green commits G (the app as judged), then the receipt with Kane's recording.
   const beforeGreen = repo.head();
@@ -202,6 +187,9 @@ test('the gate: freeze, red, a failed attempt, did-not-run cases, green, receipt
   assert.equal(receipt.red.commit, lockCommit);
   assert.equal(receipt.red.failed_step, 2);
   assert.equal(receipt.red.kane_cli, '0.10.4');
+  assert.equal(receipt.red.app_tree, repo.git('rev-parse', `${lockCommit}:demo/app`));
+  assert.equal(receipt.green.app_tree, repo.git('rev-parse', `${G}:demo/app`));
+  assert.notEqual(receipt.red.app_tree, receipt.green.app_tree);
   assert.equal(receipt.green.steps_passed, 2);
   assert.equal(receipt.green.steps_total, 2);
   assert.equal(receipt.green.failed_attempts, 2);
@@ -231,15 +219,29 @@ test('the gate: freeze, red, a failed attempt, did-not-run cases, green, receipt
   assert.equal(repo.realKaneCalled(), false);
 });
 
-test('red says the app is not answering, and records nothing, when the server is down', async (t) => {
-  const repo = await makeRepo(t, { serve: false });
-  const url = `http://127.0.0.1:${await freePort()}/`;
+test('red says the app is not answering, and records nothing, when the start page is missing', async (t) => {
+  const repo = await makeRepo(t);
+  const url = new URL('checkout.html', repo.url).href;
   repo.write('tickets/T-1.md', couponTicket(url));
   assert.equal((await repo.run(['freeze', 'T-1'])).code, 0);
   const r = await repo.run(['red', 'T-1'], { scenario: 'red' });
   assert.equal(r.code, 2);
-  assert.match(r.stderr, new RegExp(`did not run: the app is not answering at ${url.replace(/[.]/g, '\\.')}`));
+  assert.match(r.stderr, new RegExp(`did not run: the app is not answering at ${url.replace(/[.]/g, '\\.')} \\(HTTP 404\\)`));
   assert.match(r.stderr, /Nothing was recorded\./);
+  assert.equal(repo.kaneCalls().length, 0);
+  assert.equal(repo.exists(STATE), false);
+});
+
+test('red refuses when another server holds the start URL\'s port', async (t) => {
+  const repo = await makeRepo(t);
+  repo.write('tickets/T-1.md', couponTicket(repo.url));
+  assert.equal((await repo.run(['freeze', 'T-1'])).code, 0);
+  const other = createServer((req, res) => res.end('another app'));
+  await new Promise((done) => other.listen(Number(new URL(repo.url).port), '127.0.0.1', done));
+  t.after(() => new Promise((done) => other.close(done)));
+  const r = await repo.run(['red', 'T-1'], { scenario: 'red' });
+  assert.equal(r.code, 2);
+  assert.match(r.stderr, new RegExp(`Port ${new URL(repo.url).port} is already in use\\. Stop the other server`));
   assert.equal(repo.kaneCalls().length, 0);
   assert.equal(repo.exists(STATE), false);
 });

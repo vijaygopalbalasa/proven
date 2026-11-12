@@ -1,9 +1,9 @@
 import { kaneCommand } from '../config.js';
 import { Refusal } from '../errors.js';
-import { assertOnlyPaths, commitPaths, dirtyPaths, short } from '../git.js';
+import { assertOnlyPaths, commitPaths, dirtyPaths, head, objectAt, short } from '../git.js';
 import { checkFrozenTest } from '../lock.js';
 import { kaneWords, runFrozenTest } from '../run.js';
-import { loadState, statusOf, writeState } from '../state.js';
+import { loadState, lockChain, statusOf, writeState } from '../state.js';
 import { checkId, ticketPaths } from '../ticket.js';
 
 // proven red T-N: prove the frozen test fails on the code as it is, for the right reason.
@@ -22,6 +22,14 @@ export async function cmdRed(ctx, [id]) {
   if (status === 'needs-a-person') throw new Refusal(`${id} needs a person. Change the ticket and run proven freeze ${id} again.`);
   if (status === 'done') throw new Refusal(`${id} is done.`);
 
+  // Red sits on the very commit that locked the test, so the code Kane fails is the code that was frozen.
+  const L = lockChain(root, id, lock);
+  if (head(root) !== L) {
+    throw new Refusal(
+      `${id} must go red on the commit that locked its test (${short(L)}), but HEAD has moved since. Run proven freeze ${id} again, then proven red ${id} right after it.`,
+    );
+  }
+
   const dirty = dirtyPaths(root, config.app);
   if (dirty.length) {
     throw new Refusal(
@@ -38,6 +46,12 @@ export async function cmdRed(ctx, [id]) {
     return 2;
   }
 
+  if (run.appTree !== objectAt(root, run.headBefore, config.app)) {
+    out.warn(`did not run: the snapshot of ${config.app} does not match the commit ${short(run.headBefore)}.`);
+    out.warn('Nothing was recorded.');
+    return 2;
+  }
+
   const at = new Date().toISOString();
   if (run.outcome === 'passed') {
     writeState(
@@ -48,6 +62,7 @@ export async function cmdRed(ctx, [id]) {
         frozen_commit: lock.frozen_commit,
         status: 'already-passes',
         checked_commit: run.headBefore,
+        app_tree: run.appTree,
         kane: kane.label,
         kane_cli: run.kaneVersion,
         duration_s: run.durationS,
@@ -76,6 +91,7 @@ export async function cmdRed(ctx, [id]) {
     evidence_sha256: run.evidenceSha256,
     kane: kane.label,
     kane_cli: run.kaneVersion,
+    app_tree: run.appTree,
     at,
   };
   writeState(root, id, { ticket: id, frozen_commit: lock.frozen_commit, status: 'red', attempts: 0, red }, { exact: run.exact });

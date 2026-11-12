@@ -1,7 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
-import { appFingerprint, appHashAt, appProblems } from '../src/run.js';
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { exportTree, serveTree, snapshotApp } from '../src/snapshot.js';
+import { serveFolder } from '../src/serve.js';
+import { commitTreeAtPath } from '../src/git.js';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { canonicalJson, hashEntries, sha256 } from '../src/hash.js';
@@ -11,9 +13,9 @@ import { commitPaths, dirtyPaths } from '../src/git.js';
 import { readZip } from '../src/zip.js';
 import { failingScreenshot } from '../src/evidence.js';
 import { probe } from '../src/probe.js';
-import { startServer } from '../demo/server.js';
+import { APP_DIR } from '../demo/server.js';
 import { writeZip } from './support/zip-writer.js';
-import { git, TEST_EMAIL } from './support/helpers.js';
+import { freePort, git, TEST_EMAIL } from './support/helpers.js';
 import { HOME_MAC, SESSIONS } from './support/patterns.js';
 
 function tempDir(t) {
@@ -28,12 +30,15 @@ test('canonical JSON sorts keys at every level and ignores spacing', () => {
   assert.throws(() => canonicalJson({ n: NaN }));
 });
 
-test('a folder hash depends on paths and contents, not on order', () => {
+test('a folder hash depends on paths and contents, not on order, and cannot be faked by a crafted path', () => {
   const a = hashEntries([{ path: 'a.txt', content: Buffer.from('1') }, { path: 'b/c.txt', content: Buffer.from('2') }]);
   const b = hashEntries([{ path: 'b/c.txt', content: Buffer.from('2') }, { path: 'a.txt', content: Buffer.from('1') }]);
   const c = hashEntries([{ path: 'a.txt', content: Buffer.from('1') }, { path: 'b/c.txt', content: Buffer.from('3') }]);
   assert.equal(a, b);
   assert.notEqual(a, c);
+  // With joined "<sha>  <path>" lines, this one-file set would read the same as the two-file set above.
+  const crafted = hashEntries([{ path: `a.txt\n${sha256('2')}  b/c.txt`, content: Buffer.from('1') }]);
+  assert.notEqual(crafted, a);
 });
 
 test('the leak guard finds and hides emails, home paths, session folders and share links', () => {
@@ -116,28 +121,80 @@ test('commitPaths commits exactly the named paths and leaves other staged work a
   assert.equal(git(dir, 'rev-parse', 'HEAD~1'), first.commit);
 });
 
-test('the app fingerprint matches the tree git commits, modes and symlinks included', (t) => {
+function repoWithApp(t) {
   const dir = tempDir(t);
   git(dir, 'init', '-q', '-b', 'main');
   git(dir, 'config', 'user.name', 'Proven Test');
   git(dir, 'config', 'user.email', TEST_EMAIL);
   git(dir, 'config', 'commit.gpgsign', 'false');
-  mkdirSync(join(dir, 'app'));
+  mkdirSync(join(dir, 'app', 'js'), { recursive: true });
+  writeFileSync(join(dir, '.gitignore'), '*.log\n');
   writeFileSync(join(dir, 'app', 'index.html'), '<h1>Your cart</h1>');
-  writeFileSync(join(dir, 'app', 'build.sh'), 'echo hi\n');
-  chmodSync(join(dir, 'app', 'build.sh'), 0o755);
-  symlinkSync('index.html', join(dir, 'app', 'home.html'));
+  writeFileSync(join(dir, 'app', 'js', 'cart.js'), 'let total = 30;');
+  writeFileSync(join(dir, 'notes.md'), 'outside the app');
   git(dir, 'add', '-A');
   git(dir, 'commit', '-q', '-m', 'app');
-  assert.equal(appFingerprint(dir, 'app'), appHashAt(dir, 'HEAD', 'app'));
+  return dir;
+}
 
-  chmodSync(join(dir, 'app', 'build.sh'), 0o644);
-  assert.notEqual(appFingerprint(dir, 'app'), appHashAt(dir, 'HEAD', 'app'), 'a mode change counts');
-  chmodSync(join(dir, 'app', 'build.sh'), 0o755);
-  rmSync(join(dir, 'app', 'home.html'));
-  symlinkSync('build.sh', join(dir, 'app', 'home.html'));
-  assert.notEqual(appFingerprint(dir, 'app'), appHashAt(dir, 'HEAD', 'app'), 'a symlink counts by its link text');
-  assert.deepEqual(appProblems(dir, 'app'), { ignored: [], symlinks: ['app/home.html'] });
+test('a snapshot is the tree git would commit for the app: untracked files in, ignored files out', (t) => {
+  const dir = repoWithApp(t);
+  const committed = git(dir, 'rev-parse', 'HEAD:app');
+  assert.equal(snapshotApp(dir, 'app'), committed);
+
+  writeFileSync(join(dir, 'app', 'debug.log'), 'ignored');
+  assert.equal(snapshotApp(dir, 'app'), committed, 'an ignored file is not in the snapshot');
+
+  writeFileSync(join(dir, 'app', 'js', 'cart.js'), 'let total = 27.5;');
+  writeFileSync(join(dir, 'app', 'new.js'), 'new');
+  const changed = snapshotApp(dir, 'app');
+  assert.notEqual(changed, committed);
+  git(dir, 'add', '-A');
+  assert.equal(git(dir, 'diff', '--cached', '--name-only'), 'app/js/cart.js\napp/new.js');
+  git(dir, 'commit', '-q', '-m', 'change');
+  assert.equal(git(dir, 'rev-parse', 'HEAD:app'), changed, 'the snapshot id is the id git commits');
+});
+
+test('exportTree writes exactly the tree, and commitTreeAtPath commits exactly that tree for the app', (t) => {
+  const dir = repoWithApp(t);
+  writeFileSync(join(dir, 'app', 'js', 'cart.js'), 'let total = 27.5;');
+  const tree = snapshotApp(dir, 'app');
+  writeFileSync(join(dir, 'app', 'js', 'cart.js'), 'edited again after the snapshot');
+
+  const out = join(tempDir(t), 'export');
+  mkdirSync(out);
+  exportTree(dir, tree, out);
+  assert.equal(readFileSync(join(out, 'js', 'cart.js'), 'utf8'), 'let total = 27.5;');
+  assert.equal(readFileSync(join(out, 'index.html'), 'utf8'), '<h1>Your cart</h1>');
+
+  const before = git(dir, 'rev-parse', 'HEAD');
+  const g = commitTreeAtPath(dir, { path: 'app', tree, message: 'G' });
+  assert.equal(g.created, true);
+  assert.equal(git(dir, 'rev-parse', `${g.commit}:app`), tree);
+  assert.equal(git(dir, 'rev-parse', `${g.commit}~1`), before);
+  assert.equal(git(dir, 'diff-tree', '--no-commit-id', '--name-only', '-r', g.commit), 'app/js/cart.js');
+  assert.equal(git(dir, 'show', `${g.commit}:notes.md`), 'outside the app');
+  assert.equal(readFileSync(join(dir, 'app', 'js', 'cart.js'), 'utf8'), 'edited again after the snapshot');
+  assert.equal(git(dir, 'status', '--porcelain'), 'M app/js/cart.js');
+  assert.deepEqual(commitTreeAtPath(dir, { path: 'app', tree, message: 'again' }), { commit: g.commit, created: false });
+});
+
+test('serveTree serves only the snapshot, with no-store, and refuses a port that is taken', async (t) => {
+  const dir = repoWithApp(t);
+  writeFileSync(join(dir, 'app', 'debug.log'), 'ignored');
+  const tree = snapshotApp(dir, 'app');
+  const url = `http://127.0.0.1:${await freePort()}/`;
+  const served = await serveTree(dir, tree, url);
+  t.after(() => served.close());
+  const res = await fetch(url);
+  assert.equal(res.status, 200);
+  assert.equal(res.headers.get('cache-control'), 'no-store');
+  assert.equal(await res.text(), '<h1>Your cart</h1>');
+  assert.equal((await fetch(new URL('debug.log', url))).status, 404);
+  assert.equal((await fetch(new URL('js/cart.js', url))).headers.get('content-type'), 'text/javascript; charset=utf-8');
+  await assert.rejects(serveTree(dir, tree, url), /Port \d+ is already in use\. Stop the other server/);
+  await served.close();
+  assert.equal((await probe(url)).ok, false);
 });
 
 test('the zip reader reads stored and deflated entries, and finds the failing screenshot', (t) => {
@@ -173,26 +230,27 @@ test('the zip reader reads stored and deflated entries, and finds the failing sc
 });
 
 test('the probe needs HTTP 200 from the start URL', async (t) => {
-  const server = await startServer();
+  const port = await freePort();
+  const url = `http://127.0.0.1:${port}/`;
+  const server = await serveFolder(APP_DIR, { port, hosts: ['127.0.0.1'] });
   t.after(() => server.close());
-  assert.equal((await probe(server.url)).ok, true);
-  const missing = await probe(new URL('nope.html', server.url).href);
+  assert.equal((await probe(url)).ok, true);
+  const missing = await probe(new URL('nope.html', url).href);
   assert.equal(missing.ok, false);
   assert.equal(missing.status, 404);
   await server.close();
-  assert.equal((await probe(server.url)).ok, false);
+  assert.equal((await probe(url)).ok, false);
   assert.equal((await probe('not a url')).ok, false);
 });
 
-test('the demo server sends no-store and refuses paths outside the app', async (t) => {
-  const server = await startServer();
+test('the demo shop is served with no-store, and paths outside it are refused', async (t) => {
+  const port = await freePort();
+  const url = `http://127.0.0.1:${port}/`;
+  const server = await serveFolder(APP_DIR, { port, hosts: ['127.0.0.1'] });
   t.after(() => server.close());
-  const res = await fetch(server.url);
+  const res = await fetch(url);
   assert.equal(res.status, 200);
   assert.equal(res.headers.get('cache-control'), 'no-store');
   assert.match(await res.text(), /<h1>Your cart<\/h1>/);
-  const js = await fetch(new URL('cart.js', server.url));
-  assert.equal(js.headers.get('content-type'), 'text/javascript; charset=utf-8');
-  const outside = await fetch(new URL('/..%2fserver.js', server.url));
-  assert.equal(outside.status, 404);
+  assert.equal((await fetch(new URL('/..%2fserver.js', url))).status, 404);
 });

@@ -2,6 +2,7 @@ import { Refusal } from './errors.js';
 
 export const ID_RE = /^T-[1-9][0-9]*$/;
 export const LANDMARK_STEP_TITLE = 'Open the start page';
+const LOCAL_HOSTS = ['localhost', '127.0.0.1', '[::1]'];
 
 export function checkId(id) {
   if (!id || !ID_RE.test(id)) throw new Refusal(`"${id ?? ''}" is not a ticket id. Use T-1, T-2 and so on.`);
@@ -90,13 +91,17 @@ export function ticketProblems(t) {
   if (!t.title) missing.push('a title (the first line, # T-N: title)');
   if (!t.url) missing.push('a start URL');
   else {
-    let ok = false;
+    let u = null;
     try {
-      const u = new URL(t.url);
-      ok = u.protocol === 'http:' || u.protocol === 'https:';
+      u = new URL(t.url);
     } catch {}
-    if (!ok) problems.push(`The start URL "${t.url}" must start with http:// or https://.`);
+    if (!u || (u.protocol !== 'http:' && u.protocol !== 'https:')) problems.push(`The start URL "${t.url}" must start with http:// or https://.`);
     else if (/\s/.test(t.url)) problems.push('The start URL cannot contain spaces.');
+    else if (u.protocol !== 'http:' || !LOCAL_HOSTS.includes(u.hostname) || !u.port) {
+      problems.push(
+        'The start URL must be a local address with a port, like http://localhost:8091/. Proven serves the app folder itself while Kane runs, so for now the app must be static files.',
+      );
+    }
   }
   if (!t.landmark) missing.push('a landmark');
   else if (t.landmark.includes('"')) problems.push('The landmark cannot contain double quotes.');

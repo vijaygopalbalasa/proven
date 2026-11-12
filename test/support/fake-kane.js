@@ -70,22 +70,41 @@ const values = {
   TESTCASE_ID: randomBytes(13).toString('hex').toUpperCase(),
 };
 
-if (process.env.FAKE_KANE_LOG) {
+function log(extra = {}) {
+  if (!process.env.FAKE_KANE_LOG) return;
   appendFileSync(
     process.env.FAKE_KANE_LOG,
-    JSON.stringify({ scenario: scenarioName, args, session_id: sessionId, share_url: shareUrl, session_dir: sessionDir, evidence_id: evidenceId, email }) + '\n',
+    JSON.stringify({ scenario: scenarioName, args, session_id: sessionId, share_url: shareUrl, session_dir: sessionDir, evidence_id: evidenceId, email, ...extra }) + '\n',
   );
+}
+
+// Like Kane's browser, fetch pages from the app Proven is serving: FAKE_KANE_FETCH is a comma-separated path list.
+async function fetchPages() {
+  const paths = (process.env.FAKE_KANE_FETCH ?? '').split(',').filter(Boolean);
+  const fetched = {};
+  for (const path of paths) {
+    try {
+      const res = await fetch(new URL(path, startUrl));
+      const body = Buffer.from(await res.arrayBuffer());
+      fetched[path] = { status: res.status, sha256: createHash('sha256').update(body).digest('hex') };
+    } catch (err) {
+      fetched[path] = { status: 0, error: String(err.message) };
+    }
+  }
+  return fetched;
 }
 
 const out = (event) => process.stdout.write(JSON.stringify(event) + '\n');
 
 if (scenario.hang) {
+  log();
   out({ type: 'stream_start', cli_version: '0.10.4', surface: 'testmd', pid: process.pid, v: 1 });
   const child = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { stdio: 'inherit' });
   if (process.env.FAKE_KANE_PIDFILE) writeFileSync(process.env.FAKE_KANE_PIDFILE, String(child.pid));
   setInterval(() => {}, 1000);
 } else {
   play();
+  log({ fetched: await fetchPages() });
 }
 
 function fill(text) {

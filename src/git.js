@@ -141,11 +141,6 @@ export function commitsTouchingOldestFirst(root, from, to, path) {
   return out ? out.split('\n').filter(Boolean) : [];
 }
 
-// The last commit up to `ref` that changed path.
-export function lastCommitTouching(root, ref, path) {
-  const out = git(root, ['log', '-1', '--format=%H', ref, '--', path], { allowFail: true });
-  return out ? out.trim() || null : null;
-}
 
 export function blob(root, id) {
   return git(root, ['cat-file', 'blob', id], { buffer: true });
@@ -161,7 +156,7 @@ function pathKnown(root, headSha, p) {
 // Commit exactly the working-tree state of `paths` on top of HEAD, using a temporary index, so whatever else the
 // person has staged stays staged and out of this commit. `excludes` are pathspecs to leave out.
 // Returns { commit, created }. If nothing changed, returns HEAD with created false.
-export function commitPaths(root, { paths, excludes = [], message }) {
+export function commitPaths(root, { paths, excludes = [], message, allowEmpty = false }) {
   const headSha = head(root);
   const gitDir = git(root, ['rev-parse', '--absolute-git-dir']).trim();
   const tmpIndex = join(gitDir, `proven-index-${process.pid}-${randomBytes(4).toString('hex')}`);
@@ -174,7 +169,7 @@ export function commitPaths(root, { paths, excludes = [], message }) {
       git(root, ['add', '-A', '--', ...present, ...excludes.map((e) => `:(exclude,glob)${e}`)], { env });
     }
     const tree = git(root, ['write-tree'], { env }).trim();
-    if (headSha && tree === git(root, ['rev-parse', `${headSha}^{tree}`]).trim()) {
+    if (!allowEmpty && headSha && tree === git(root, ['rev-parse', `${headSha}^{tree}`]).trim()) {
       return { commit: headSha, created: false };
     }
     const args = ['commit-tree', tree, '-m', message];
@@ -185,6 +180,33 @@ export function commitPaths(root, { paths, excludes = [], message }) {
     git(root, update);
     // Bring the real index in line with the new commit for these paths only.
     if (present.length) git(root, ['reset', '-q', '--', ...present]);
+    return { commit, created: true };
+  } finally {
+    rmSync(tmpIndex, { force: true });
+  }
+}
+
+// Commit HEAD's tree with `path` replaced by an existing tree id, so the commit holds exactly that tree for the
+// path, built from the tree itself and not from the working tree. Returns HEAD unchanged if it already holds it.
+export function commitTreeAtPath(root, { path, tree, message }) {
+  const headSha = head(root);
+  if (headSha && objectAt(root, headSha, path) === tree) return { commit: headSha, created: false };
+  const gitDir = git(root, ['rev-parse', '--absolute-git-dir']).trim();
+  const tmpIndex = join(gitDir, `proven-index-${process.pid}-${randomBytes(4).toString('hex')}`);
+  const env = { ...process.env, GIT_INDEX_FILE: tmpIndex };
+  try {
+    if (headSha) git(root, ['read-tree', headSha], { env });
+    else git(root, ['read-tree', '--empty'], { env });
+    git(root, ['rm', '-r', '-q', '--cached', '--ignore-unmatch', '--', path], { env });
+    git(root, ['read-tree', `--prefix=${path}/`, tree], { env });
+    const newTree = git(root, ['write-tree'], { env }).trim();
+    const args = ['commit-tree', newTree, '-m', message];
+    if (headSha) args.push('-p', headSha);
+    const commit = git(root, args).trim();
+    const update = ['update-ref', '-m', `proven: ${message}`, 'HEAD', commit];
+    if (headSha) update.push(headSha);
+    git(root, update);
+    git(root, ['reset', '-q', '--', path]);
     return { commit, created: true };
   } finally {
     rmSync(tmpIndex, { force: true });

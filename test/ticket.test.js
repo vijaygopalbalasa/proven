@@ -63,6 +63,16 @@ test('freeze problems name each fix', () => {
   assert.ok(problems.some((p) => p.includes('Criterion 2 (Empty) has no steps')));
 });
 
+test('the start URL must be local with a port, because Proven serves the app itself', () => {
+  for (const url of ['https://shop.example.com/', 'http://localhost/', 'http://10.0.0.5:8091/']) {
+    const t = parseTicket(good.replace('http://localhost:8091/', url), 'T-1');
+    assert.ok(ticketProblems(t).problems.some((p) => p.startsWith('The start URL must be a local address with a port')), url);
+  }
+  for (const url of ['http://127.0.0.1:8091/cart.html', 'http://[::1]:9000/']) {
+    assert.deepEqual(ticketProblems(parseTicket(good.replace('http://localhost:8091/', url), 'T-1')).problems, [], url);
+  }
+});
+
 test('the frozen test opens the start URL and checks the landmark first, then one step per criterion', () => {
   const text = renderTest(parseTicket(good, 'T-1'));
   assert.equal(

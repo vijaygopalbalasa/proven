@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { Refusal } from './errors.js';
-import { changedPaths, commitsTouchingOldestFirst, fileAt, git, lastCommitTouching, parentOf, short } from './git.js';
+import { changedPaths, commitsTouchingOldestFirst, fileAt, git, parentOf, resolveCommit, short } from './git.js';
 import { canonicalJson } from './hash.js';
 import { assertClean } from './leak.js';
 import { ticketPaths } from './ticket.js';
@@ -58,13 +58,31 @@ export const RED_FIELDS = [
   'kane_cli',
   'duration_s',
   'credits',
+  'app_tree',
 ];
-const RED_NOT_EMPTY = ['commit', 'failed_step', 'failed_step_title', 'kane'];
+const RED_NOT_EMPTY = ['commit', 'failed_step', 'failed_step_title', 'kane', 'app_tree'];
 
-// Cheap invariants on the red record, which an agent with a shell could otherwise rewrite:
-// every field is present (nothing is assumed), red.commit is the parent of the first state commit after the
-// lock (the commit red was recorded on), and no later state commit changes the red record.
-export function checkRedRecord(root, id, state) {
+// The lock chain: after the frozen commit F, the lock is written exactly once, in its own commit, right on F.
+// Returns that lock commit L. Red must then be recorded right on L.
+export function lockChain(root, id, lock) {
+  const p = ticketPaths(id);
+  const F = resolveCommit(root, lock.frozen_commit);
+  if (!F) throw new Refusal(`The frozen commit ${short(lock.frozen_commit)} of ${id} is not in this repository.`);
+  const writes = commitsTouchingOldestFirst(root, F, 'HEAD', p.lock);
+  if (writes.length !== 1) {
+    throw new Refusal(`${p.lock} was written ${writes.length} times after its frozen commit ${short(F)}. A person needs to look at ${id}.`);
+  }
+  const L = writes[0];
+  if (parentOf(root, L) !== F) throw new Refusal(`${p.lock} was not written right after its frozen commit ${short(F)}. A person needs to look at ${id}.`);
+  const changed = changedPaths(root, L);
+  if (changed.length !== 1 || changed[0] !== p.lock) throw new Refusal(`The lock commit ${short(L)} of ${id} holds other files too.`);
+  return L;
+}
+
+// Cheap invariants on the red record, which an agent with a shell could otherwise rewrite: every field is present
+// (nothing is assumed), the first state commit after the lock sits right on the lock commit and records red there,
+// and no later state commit changes the red record.
+export function checkRedRecord(root, id, state, lock) {
   const p = ticketPaths(id);
   const red = state.red;
   if (!red || typeof red !== 'object') throw new Refusal(`${p.state} has no red record. A person needs to look at ${id}.`);
@@ -73,14 +91,14 @@ export function checkRedRecord(root, id, state) {
       throw new Refusal(`${p.state} is missing red.${key}. A person needs to look at ${id}.`);
     }
   }
-  const lockCommit = lastCommitTouching(root, 'HEAD', p.lock);
-  const stateCommits = lockCommit ? commitsTouchingOldestFirst(root, lockCommit, 'HEAD', p.state) : [];
+  const L = lockChain(root, id, lock);
+  const stateCommits = commitsTouchingOldestFirst(root, L, 'HEAD', p.state);
   if (!stateCommits.length) throw new Refusal(`No commit after the lock records red in ${p.state}. A person needs to look at ${id}.`);
-  const recordedOn = parentOf(root, stateCommits[0]);
-  if (recordedOn !== red.commit) {
-    throw new Refusal(
-      `The red record in ${p.state} names ${short(red.commit)}, but red was recorded on ${short(recordedOn)}. A person needs to look at ${id}.`,
-    );
+  if (parentOf(root, stateCommits[0]) !== L) {
+    throw new Refusal(`The first state commit after the lock, ${short(stateCommits[0])}, does not sit on the lock commit ${short(L)}. A person needs to look at ${id}.`);
+  }
+  if (red.commit !== L) {
+    throw new Refusal(`The red record in ${p.state} names ${short(red.commit)}, but red was recorded on ${short(L)}. A person needs to look at ${id}.`);
   }
   const first = JSON.parse(fileAt(root, stateCommits[0], p.state)?.toString('utf8') ?? 'null');
   if (!first || first.status !== 'red' || canonicalJson(first.red) !== canonicalJson(red)) {
