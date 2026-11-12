@@ -5,16 +5,34 @@
 //
 // It blocks the agent from changing files under tickets/ (which holds Kane's recordings, tickets/output-T-N/),
 // receipts/, .proven/ and .claude/, and from running proven new, proven freeze or proven red, which are a person's
-// steps. It is a guard rail, not a sandbox: an agent
-// with a shell can still get around it. That is why Proven shows a ticket as done only for a receipt that verifies.
+// steps. For shell commands it fails closed where it can: a command that writes files is blocked when any of its
+// arguments points into those folders, whichever argument the command would write to. It is defence in depth, not a
+// sandbox: an agent with a shell can still get around it. That is why Proven shows a ticket as done only for a
+// receipt that verifies.
 import { existsSync, realpathSync } from 'node:fs';
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 export const PROTECTED = ['tickets', 'receipts', '.proven', '.claude'];
 export const PERSON_STEPS = ['new', 'freeze', 'red'];
-const WRAPPERS = new Set(['node', 'npx', 'npm', 'pnpm', 'yarn', 'bun', 'bunx', 'env', 'sudo', 'time', 'exec', 'command', 'nice', 'nohup']);
-const SHELLS = new Set(['sh', 'bash', 'zsh', 'dash']);
+// Programs that run another program named later on the line.
+const WRAPPERS = new Set([
+  'node', 'npx', 'npm', 'pnpm', 'yarn', 'bun', 'bunx', 'env', 'sudo', 'doas', 'time', 'exec', 'command', 'builtin',
+  'nice', 'nohup', 'timeout', 'xargs', 'stdbuf', 'ionice', 'caffeinate', 'watch',
+]);
+const SHELLS = new Set(['sh', 'bash', 'zsh', 'dash', 'ksh', 'fish']);
+// Programs that write, move, link, create or delete the files they are given.
+const WRITERS = new Set([
+  'cp', 'mv', 'ln', 'rsync', 'install', 'ditto', 'scp', 'mkdir', 'touch', 'rm', 'rmdir', 'unlink', 'truncate', 'shred',
+  'chmod', 'chown', 'tar', 'unzip', 'dd', 'patch', 'tee',
+]);
+// Programs that edit files in place only with -i (bundled or not) or --in-place.
+const EDITORS = new Set(['sed', 'gsed', 'perl']);
+// Programs that run code given on the line.
+const INTERPRETERS = new Set(['node', 'deno', 'bun', 'python', 'python3', 'perl', 'ruby', 'php', 'osascript']);
+const ASSIGNMENT = /^[A-Za-z_][A-Za-z0-9_]*=/;
+// A protected folder named as a path segment inside code or text.
+const MENTION = /(^|[\s'"`(=,:/])(tickets|receipts|\.proven|\.claude)(\/|\\|$|[\s'"`),;])/i;
 
 const WHY = {
   tickets: 'Tickets, their frozen tests and locks are a person\'s. Fix the app, not the test.',
@@ -129,74 +147,60 @@ export function shellParts(command) {
 
 const isProven = (w) => /^proven(\.m?js)?$/.test(basename(w));
 
-// The person's step a simple command runs (new, freeze or red), or null. The program is the first word after any
-// NAME=value; behind a wrapper such as node, npx or sudo, it is the first word that names proven.
-export function personStep(words) {
+// Where the program of a simple command is: the first word after any NAME=value. Behind a wrapper such as env, sudo,
+// timeout or xargs, it is the first later word that `matches`. Returns -1 when there is none.
+function programIndex(words, matches) {
   let i = 0;
-  while (i < words.length && /^[A-Za-z_][A-Za-z0-9_]*=/.test(words[i])) i++;
-  const program = words[i];
-  if (!program) return null;
-  let at = -1;
-  if (isProven(program)) at = i;
-  else if (WRAPPERS.has(basename(program))) at = words.findIndex((w, j) => j > i && isProven(w));
+  while (i < words.length && ASSIGNMENT.test(words[i])) i++;
+  if (i >= words.length) return -1;
+  if (matches(words[i])) return i;
+  if (!WRAPPERS.has(basename(words[i]))) return -1;
+  return words.findIndex((w, j) => j > i && matches(w));
+}
+
+// The person's step a simple command runs (new, freeze or red), or null.
+export function personStep(words) {
+  const at = programIndex(words, isProven);
   if (at < 0) return null;
   const step = words.slice(at + 1).find((w) => !w.startsWith('-'));
   return PERSON_STEPS.includes(step) ? step : null;
 }
 
-// The paths a simple command writes to, for the usual ways a shell copies, moves, links, creates, deletes or edits
-// files in place. Reading is left alone: cp tickets/T-1.md elsewhere is fine.
+// Every path an argument could name: the word itself, the value after an =, and for an option word every tail of it,
+// so a value bundled into short options (cp -vtDIR, tar -xzCDIR) is seen too.
+function pathsIn(word) {
+  const out = [word];
+  const eq = word.indexOf('=');
+  if (eq >= 0) out.push(word.slice(eq + 1));
+  if (word.startsWith('-')) for (let i = 1; i < word.length; i++) out.push(word.slice(i));
+  return out;
+}
+
+// What a simple command may write to: for a writing program, every argument after it, whichever one the program
+// would really write to. That leaves no parser to get around. An editor counts only when it edits in place.
 export function writeTargets(words) {
-  const name = basename(words[0] ?? '');
-  const args = words.slice(1);
-  const plain = args.filter((w) => !w.startsWith('-'));
-  const valueOf = (...flags) => {
-    for (let i = 0; i < args.length; i++) {
-      for (const f of flags) {
-        if (args[i] === f) return args[i + 1] ?? null;
-        if (f.startsWith('--') && args[i].startsWith(`${f}=`)) return args[i].slice(f.length + 1);
-        if (!f.startsWith('--') && args[i].startsWith(f) && args[i].length > f.length) return args[i].slice(f.length);
-      }
-    }
-    return null;
-  };
-  switch (name) {
-    case 'cp':
-    case 'ln':
-    case 'rsync':
-    case 'install':
-    case 'ditto':
-    case 'scp': {
-      const target = valueOf('-t', '--target-directory');
-      return target ? [target] : plain.slice(-1);
-    }
-    case 'mv': {
-      // Moving a file away changes it as much as writing over it.
-      const target = valueOf('-t', '--target-directory');
-      return target ? [target, ...plain] : plain;
-    }
-    case 'mkdir':
-    case 'touch':
-    case 'rm':
-    case 'rmdir':
-    case 'unlink':
-    case 'truncate':
-    case 'shred':
-      return plain;
-    case 'sed':
-    case 'perl':
-      return args.some((w) => /^-[A-Za-z]*i/.test(w) || w.startsWith('--in-place')) ? plain : [];
-    case 'tar': {
-      const dir = valueOf('-C', '--directory');
-      return dir ? [dir] : [];
-    }
-    case 'unzip': {
-      const dir = valueOf('-d');
-      return dir ? [dir] : [];
-    }
-    default:
-      return [];
+  const at = programIndex(words, (w) => WRITERS.has(basename(w)) || EDITORS.has(basename(w)) || basename(w) === 'find');
+  if (at < 0) return [];
+  const name = basename(words[at]);
+  const args = words.slice(at + 1);
+  if (EDITORS.has(name) && !args.some((w) => (/^-[^-]/.test(w) && w.includes('i')) || w.startsWith('--in-place'))) return [];
+  if (name === 'find' && !args.some((w) => /^-(delete|exec|execdir|ok|okdir|fprint|fprintf|fls)$/.test(w))) return [];
+  return args.flatMap(pathsIn);
+}
+
+// Code given on the line (node -e, python -c, perl -e) that names a protected folder. The guard cannot tell whether
+// the code reads or writes, so it blocks.
+function inlineCodeArea(words) {
+  const at = programIndex(words, (w) => INTERPRETERS.has(basename(w)));
+  if (at < 0) return null;
+  const args = words.slice(at + 1);
+  const inline = args.some((w) => /^-[A-Za-z]*[ecpE]$/.test(w) || w === '--eval' || w === '--print' || w.startsWith('--eval='));
+  if (!inline) return null;
+  for (const w of args) {
+    const m = MENTION.exec(w);
+    if (m) return m[2].toLowerCase();
   }
+  return null;
 }
 
 function bashVerdict(command, where, depth = 0) {
@@ -204,16 +208,17 @@ function bashVerdict(command, where, depth = 0) {
   for (const words of commands) {
     const step = personStep(words);
     if (step) return `Proven: proven ${step} is a person's step, not the agent's. Work on the app. ${DONE_HINT}`;
-    const name = basename(words[0] ?? '');
-    if (name === 'tee') targets.push(...words.slice(1).filter((w) => !w.startsWith('-')));
-    targets.push(...writeTargets(words));
-    if (SHELLS.has(name) && depth < 3) {
-      const k = words.indexOf('-c');
+    const shell = programIndex(words, (w) => SHELLS.has(basename(w)));
+    if (shell >= 0 && depth < 3) {
+      const k = words.indexOf('-c', shell);
       if (k > 0 && words[k + 1]) {
         const inner = bashVerdict(words[k + 1], where, depth + 1);
         if (inner) return inner;
       }
     }
+    const code = inlineCodeArea(words);
+    if (code) return `Proven: this command runs code that names a path under ${code}/, which the agent does not change. ${WHY[code]} ${DONE_HINT}`;
+    targets.push(...writeTargets(words));
   }
   for (const t of targets) {
     const area = protectedArea(t, where);

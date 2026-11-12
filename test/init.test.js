@@ -158,6 +158,28 @@ test('the hook blocks writes to tickets, receipts, .proven and .claude, and a pe
     ['Bash', { command: "perl -pi -e 's/27.50/30.00/' tickets/T-1_test.md" }, /under tickets\//],
     ['Bash', { command: 'tar -xf recording.tar -C tickets/output-T-1' }, /under tickets\//],
     ['Bash', { command: 'unzip -o recording.zip -d tickets/output-T-1' }, /under tickets\//],
+    // Wrappers and NAME=value before the program.
+    ['Bash', { command: 'env X=1 cp /tmp/recording/Result.md tickets/output-T-1/Result.md' }, /under tickets\//],
+    ['Bash', { command: 'X=1 timeout 5 cp -r /tmp/recording tickets/output-T-1' }, /under tickets\//],
+    ['Bash', { command: 'sudo -E mv /tmp/recording tickets/output-T-1' }, /under tickets\//],
+    ['Bash', { command: 'ls /tmp/recording | xargs -I{} cp /tmp/recording/{} tickets/output-T-1/' }, /under tickets\//],
+    ['Bash', { command: 'nice -n 5 rm -rf tickets/output-T-1' }, /under tickets\//],
+    ['Bash', { command: 'command cp /tmp/recording/Result.md tickets/output-T-1/Result.md' }, /under tickets\//],
+    ['Bash', { command: 'nohup sh -c "cp -r /tmp/recording tickets/output-T-1"' }, /under tickets\//],
+    // Bundled short options, and targets that are not the last argument.
+    ['Bash', { command: 'cp -vt tickets/output-T-1 /tmp/recording/Result.md' }, /under tickets\//],
+    ['Bash', { command: 'cp -vttickets/output-T-1 /tmp/recording/Result.md' }, /under tickets\//],
+    ['Bash', { command: 'cp --target-directory=tickets/output-T-1 /tmp/recording/Result.md' }, /under tickets\//],
+    ['Bash', { command: 'tar -xzC tickets/output-T-1 -f recording.tgz' }, /under tickets\//],
+    ['Bash', { command: 'tar -xzf recording.tgz -Ctickets/output-T-1' }, /under tickets\//],
+    ['Bash', { command: 'rsync -a /tmp/recording/ tickets/output-T-1/ --delete' }, /under tickets\//],
+    ['Bash', { command: 'dd if=/tmp/recording/Result.md of=tickets/output-T-1/Result.md' }, /under tickets\//],
+    ['Bash', { command: 'find tickets/output-T-1 -name "*.md" -delete' }, /under tickets\//],
+    ['Bash', { command: "sed -Ei 's/27.50/30.00/' tickets/T-1_test.md" }, /under tickets\//],
+    ['Bash', { command: "perl -pie 's/27.50/30.00/' tickets/T-1_test.md" }, /under tickets\//],
+    // Inline code that names a protected folder.
+    ['Bash', { command: `node -e "require('fs').writeFileSync('tickets/output-T-1/Result.md', 'x')"` }, /under tickets\//],
+    ['Bash', { command: `python3 -c "open('receipts/T-1.json', 'w').write('{}')"` }, /under receipts\//],
   ];
   for (const [tool, input, re] of blocked) {
     const r = runGuard(dir, hookInput(dir, tool, input));
@@ -180,7 +202,11 @@ test('the hook blocks writes to tickets, receipts, .proven and .claude, and a pe
     ['Bash', { command: 'git log --oneline -- .proven/state tickets' }],
     ['Bash', { command: 'npm test > test-output.txt 2>&1' }],
     ['Bash', { command: 'node bin/proven.js done T-1 2>&1 | tail -5' }],
-    ['Bash', { command: 'cp tickets/T-1.md /tmp/proven-copy.md' }],
+    ['Bash', { command: 'cat tickets/T-1.md > /tmp/proven-copy.md' }],
+    ['Bash', { command: 'grep -rn "cp" demo/app' }],
+    ['Bash', { command: 'timeout 600 node bin/proven.js done T-1' }],
+    ['Bash', { command: 'env CI=1 npm test' }],
+    ['Bash', { command: 'node -e "console.log(1 + 1)"' }],
     ['Bash', { command: 'mkdir -p demo/app/img && touch demo/app/img/logo.svg && rm demo/app/old.js' }],
     ['Bash', { command: "sed -n '1,5p' tickets/T-1_test.md" }],
     ['Bash', { command: 'tar -tf recording.tar' }],

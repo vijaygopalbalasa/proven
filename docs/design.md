@@ -209,9 +209,13 @@ NotebookEdit and Bash (`node "$CLAUDE_PROJECT_DIR/.claude/hooks/proven-guard.mjs
 before it writes, keeps other settings and text, replaces only its own hook and section on a second run, and commits
 nothing. The guard reads Claude Code's PreToolUse JSON from stdin. It blocks (exit 2, the reason on stderr) a file tool
 whose path, after symlinks and without case, falls under `tickets/` (which holds Kane's recordings), `receipts/`,
-`.proven/` or `.claude/`, and a Bash command that runs `proven new`, `freeze` or `red` (also behind node, npx, env or
-`sh -c`, or inside `$( )`) or writes to those folders with `>`, `>>`, `tee`, `cp`, `mv` (either side), `ln`, `rsync`,
-`install`, `mkdir`, `touch`, `rm`, `truncate`, `sed -i`, `perl -i`, `tar -C` or `unzip -d`. Input it cannot read is let through. It is a guard rail, not a sandbox.
+`.proven/` or `.claude/`, and a Bash command that runs `proven new`, `freeze` or `red`. For the shell it finds the
+program the same way for every check: after any NAME=value, and behind wrappers (env, sudo, timeout, xargs, nice,
+nohup, node, npx and others), with `sh -c` strings and `$( )` checked too. It then fails closed rather than parse: a
+writing program (cp, mv, ln, rsync, install, mkdir, touch, rm, truncate, dd, tar, unzip, patch, tee and others, or
+sed and perl with an in-place flag, or find with -delete or -exec) is blocked when any argument, any value after an
+`=`, or any tail of an option word (so `cp -vtDIR` and `tar -xzCDIR` count) points into those folders. `>` and `>>`
+targets count too, and so does inline code (`node -e`, `python -c`, `perl -e`) that names one of the folders. Input it cannot read is let through. It is a guard rail, not a sandbox.
 
 ## Demo (8)
 

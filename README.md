@@ -55,10 +55,12 @@ Proven serves the app itself while Kane runs, on the start URL's port (8091 here
 
 - `.claude/hooks/proven-guard.mjs`, run by a PreToolUse hook in `.claude/settings.json` before every Write, Edit,
   MultiEdit, NotebookEdit and Bash call. It blocks changes under `tickets/` (where Kane also keeps its recordings),
-  `receipts/`, `.proven/` and `.claude/`, by the file tools or by the usual shell ways (`>`, `tee`, `cp`, `mv`, `ln`,
-  `rsync`, `mkdir`, `touch`, `rm`, `sed -i`, `tar -C`, `unzip -d`), and the commands `proven new`, `proven freeze` and
-  `proven red`, which are a person's steps. It exits with code 2 and says why on stderr, which Claude Code shows to the
-  agent.
+  `receipts/`, `.proven/` and `.claude/`, and the commands `proven new`, `proven freeze` and `proven red`, which are a
+  person's steps. From the shell it fails closed: a command that writes files (`cp`, `mv`, `ln`, `rsync`, `mkdir`,
+  `rm`, `dd`, `tar`, `sed -i`, `find -delete` and others, also behind `env`, `sudo`, `timeout` or `xargs`) is blocked
+  when any of its arguments points there, as are `>`, `tee` and inline code (`node -e`, `python -c`) that names those
+  folders. It exits with code 2 and says why on stderr, which Claude Code shows to the agent. It is defence in depth:
+  in the demo the agent's only shell command is `node bin/proven.js done`.
 - Bash time limits in the same settings (10 minutes), because a Kane run takes a minute or two and `proven done` runs
   in the foreground.
 - A section in `CLAUDE.md`: when the agent believes a ticket is done, it runs `proven done T-N`; it fixes the app,
