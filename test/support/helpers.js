@@ -28,7 +28,10 @@ export function git(dir, ...args) {
 
 export function runProven(cwd, args, env = {}) {
   const fullEnv = { ...process.env };
-  for (const [k, v] of Object.entries(env)) if (v !== undefined) fullEnv[k] = v;
+  for (const [k, v] of Object.entries(env)) {
+    if (v === undefined) delete fullEnv[k];
+    else fullEnv[k] = v;
+  }
   return new Promise((done) => {
     execFile(process.execPath, [PROVEN, ...args], { cwd, env: fullEnv, maxBuffer: 16 * 1024 * 1024 }, (err, stdout, stderr) => {
       done({ code: err ? (typeof err.code === 'number' ? err.code : 1) : 0, stdout, stderr });
@@ -36,8 +39,9 @@ export function runProven(cwd, args, env = {}) {
   });
 }
 
-// A temporary git repo holding a copy of the demo shop, served for real, with the fake Kane in its config.
-// A kane-cli shim first on PATH fails loudly if anything reaches for the real Kane CLI.
+// A temporary git repo holding a copy of the demo shop, served for real. Proven runs with the test-only
+// PROVEN_KANE_BIN pointing at the fake Kane; a kane-cli shim first on PATH fails loudly if anything reaches for
+// the real Kane CLI instead.
 export async function makeRepo(t, { timeoutS = 60, maxAttempts = 4, serve = true } = {}) {
   const dir = realpathSync(mkdtempSync(join(tmpdir(), 'proven-test-')));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
@@ -46,14 +50,13 @@ export async function makeRepo(t, { timeoutS = 60, maxAttempts = 4, serve = true
   mkdirSync(join(dir, '.proven'), { recursive: true });
   writeFileSync(
     join(dir, '.proven', 'config.json'),
-    JSON.stringify({ app: 'demo/app', kane: [process.execPath, FAKE_KANE], timeout_s: timeoutS, max_attempts: maxAttempts }, null, 2),
+    JSON.stringify({ app: 'demo/app', timeout_s: timeoutS, max_attempts: maxAttempts }, null, 2) + '\n',
   );
   git(dir, 'init', '-q', '-b', 'main');
   git(dir, 'config', 'user.name', 'Proven Test');
   git(dir, 'config', 'user.email', TEST_EMAIL);
   git(dir, 'config', 'commit.gpgsign', 'false');
   git(dir, 'config', 'core.hooksPath', join(dir, '.git', 'no-hooks'));
-  appendFileSync(join(dir, '.git', 'info', 'exclude'), '.proven/config.json\n');
   git(dir, 'add', '-A');
   git(dir, 'commit', '-q', '-m', 'Start the shop');
 
@@ -72,8 +75,15 @@ export async function makeRepo(t, { timeoutS = 60, maxAttempts = 4, serve = true
     dir,
     url: server ? server.url : null,
     log,
-    run: (args, { scenario, env } = {}) =>
-      runProven(dir, args, { FAKE_KANE_SCENARIO: scenario, FAKE_KANE_LOG: log, PATH: `${shim}:${process.env.PATH}`, ...env }),
+    // realKane: true leaves PROVEN_KANE_BIN unset, so Proven would reach for kane-cli (the shim).
+    run: (args, { scenario, env, realKane = false } = {}) =>
+      runProven(dir, args, {
+        PROVEN_KANE_BIN: realKane ? undefined : FAKE_KANE,
+        FAKE_KANE_SCENARIO: scenario,
+        FAKE_KANE_LOG: log,
+        PATH: `${shim}:${process.env.PATH}`,
+        ...env,
+      }),
     git: (...args) => git(dir, ...args),
     read: (rel) => readFileSync(join(dir, rel), 'utf8'),
     write: (rel, text) => {

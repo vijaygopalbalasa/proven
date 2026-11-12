@@ -24,10 +24,12 @@ function saveRaw(root, id, label, raw) {
 }
 
 // Probe the app, run Kane on the frozen test, probe again, and classify.
-export async function runFrozenTest(ctx, { id, label, steps, startUrl }) {
+// `kane` comes from kaneCommand(): kane-cli from PATH, or the test-only fake, which is always announced.
+export async function runFrozenTest(ctx, { id, label, steps, startUrl, kane }) {
   const { root, config, out } = ctx;
   const p = ticketPaths(id);
 
+  if (kane.fake) out.both(`Kane: ${kane.label}. This run is not Kane CLI evidence.`);
   const before = await probe(startUrl);
   if (!before.ok) {
     return { outcome: 'did-not-run', reason: `the app is not answering at ${startUrl} (${before.detail})`, exact: [] };
@@ -35,11 +37,10 @@ export async function runFrozenTest(ctx, { id, label, steps, startUrl }) {
 
   const headBefore = head(root);
   const appBefore = appFingerprint(root, config.app);
-  if (!config.kaneIsDefault) out.progress(`Using Kane command from .proven/config.json: ${config.kane.join(' ')}`);
   out.progress(`Running Kane on ${p.test} (${steps.length} steps). This takes about a minute.`);
 
   const result = await runKane({
-    command: config.kane,
+    command: kane.command,
     args: ['testmd', 'run', p.test, '--agent', '--headless'],
     cwd: root,
     timeoutMs: config.timeoutS * 1000,
@@ -53,7 +54,7 @@ export async function runFrozenTest(ctx, { id, label, steps, startUrl }) {
   });
   saveRaw(root, id, label, result.raw);
 
-  const verdict = classifyRun({ ...result, steps, timeoutS: config.timeoutS, command: config.kane });
+  const verdict = classifyRun({ ...result, steps, timeoutS: config.timeoutS, command: kane.command });
   verdict.headBefore = headBefore;
 
   if (verdict.outcome === 'did-not-run' && (result.exitCode === 2 || result.spawnError)) {

@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { canonicalJson, hashEntries, sha256 } from '../src/hash.js';
 import { findLeaks, scrubText } from '../src/leak.js';
-import { loadConfig } from '../src/config.js';
+import { kaneCommand, loadConfig, settingsOf } from '../src/config.js';
 import { commitPaths, dirtyPaths } from '../src/git.js';
 import { readZip } from '../src/zip.js';
 import { failingScreenshot } from '../src/evidence.js';
@@ -13,7 +13,7 @@ import { probe } from '../src/probe.js';
 import { startServer } from '../demo/server.js';
 import { writeZip } from './support/zip-writer.js';
 import { git, TEST_EMAIL } from './support/helpers.js';
-import { HOME_MAC } from './support/patterns.js';
+import { HOME_MAC, SESSIONS } from './support/patterns.js';
 
 function tempDir(t) {
   const dir = realpathSync(mkdtempSync(join(tmpdir(), 'proven-core-')));
@@ -39,7 +39,7 @@ test('the leak guard finds and hides emails, home paths, session folders and sha
   const home = `${HOME_MAC}someone`;
   const email = ['someone', 'example.org'].join('@');
   const link = ['https://test-manager.', 'lambdatest', '.com/projects/1/share/US_X'].join('');
-  const text = `ran by ${email} at ${home}/.testmuai/kaneai/sessions/abc/runs/1, see ${link} and id abcdef-123`;
+  const text = `ran by ${email} at ${home}/${SESSIONS}/abc/runs/1, see ${link} and id abcdef-123`;
   const kinds = findLeaks(text, { exact: ['abcdef-123'] }).map((l) => l.kind);
   for (const k of ['an email address', 'a home folder path', 'a Kane session folder', 'a share or Test Manager link', 'an id or link from this Kane run']) {
     assert.ok(kinds.includes(k), k);
@@ -50,16 +50,37 @@ test('the leak guard finds and hides emails, home paths, session folders and sha
   assert.deepEqual(findLeaks('Total shows $27.50 at http://localhost:8091/ (assertion_failed: @ step 5)'), []);
 });
 
-test('config: defaults, a custom Kane command, and refusals for unsafe app folders', (t) => {
+test('config: defaults, refusals for unsafe app folders, and no way to set Kane from the repository', (t) => {
   const dir = tempDir(t);
-  assert.deepEqual(loadConfig(dir), { app: 'demo/app', kane: ['kane-cli'], timeoutS: 300, maxAttempts: 4, kaneIsDefault: true });
+  assert.deepEqual(loadConfig(dir), { app: 'demo/app', timeoutS: 300, maxAttempts: 4 });
   mkdirSync(join(dir, '.proven'));
-  writeFileSync(join(dir, '.proven', 'config.json'), JSON.stringify({ app: 'web/', kane: 'my-kane', timeout_s: 120 }));
-  assert.deepEqual(loadConfig(dir), { app: 'web', kane: ['my-kane'], timeoutS: 120, maxAttempts: 4, kaneIsDefault: false });
+  writeFileSync(join(dir, '.proven', 'config.json'), JSON.stringify({ app: 'web/', timeout_s: 120 }));
+  assert.deepEqual(loadConfig(dir), { app: 'web', timeoutS: 120, maxAttempts: 4 });
+  writeFileSync(join(dir, '.proven', 'config.json'), JSON.stringify({ kane: ['node', 'always-pass.js'] }));
+  assert.throws(() => loadConfig(dir), /"kane" cannot be set here\. Proven always runs kane-cli/);
+  writeFileSync(join(dir, '.proven', 'config.json'), JSON.stringify({ kane_cli: 'x' }));
+  assert.throws(() => loadConfig(dir), /unknown setting "kane_cli"/);
   for (const app of ['.', '..', '/abs', 'tickets', 'receipts/x', '.proven']) {
     writeFileSync(join(dir, '.proven', 'config.json'), JSON.stringify({ app }));
     assert.throws(() => loadConfig(dir), /"app" must be a folder/, app);
   }
+});
+
+test('Kane is kane-cli from PATH unless the test-only PROVEN_KANE_BIN is set, and then it says so', () => {
+  assert.deepEqual(kaneCommand({}), { command: ['kane-cli'], label: 'kane-cli', fake: false });
+  assert.deepEqual(kaneCommand({ PROVEN_KANE_BIN: '/opt/fake-kane.js' }), {
+    command: [process.execPath, '/opt/fake-kane.js'],
+    label: 'fake (PROVEN_KANE_BIN)',
+    fake: true,
+  });
+  assert.deepEqual(kaneCommand({ PROVEN_KANE_BIN: '/opt/fake-kane' }).command, ['/opt/fake-kane']);
+});
+
+test('the pinned settings cover the app folder, the time limit, the attempt limit and the start URL', () => {
+  const a = settingsOf({ app: 'demo/app', timeoutS: 300, maxAttempts: 4 }, 'http://localhost:8091/');
+  assert.deepEqual(a, { app: 'demo/app', timeout_s: 300, max_attempts: 4, start_url: 'http://localhost:8091/' });
+  const b = settingsOf({ app: 'demo/app', timeoutS: 30, maxAttempts: 4 }, 'http://localhost:8091/');
+  assert.notEqual(sha256(canonicalJson(a)), sha256(canonicalJson(b)));
 });
 
 test('commitPaths commits exactly the named paths and leaves other staged work alone', (t) => {

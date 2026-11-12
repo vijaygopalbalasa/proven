@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { classifyRun } from '../src/classify.js';
 import { ROOT } from './support/helpers.js';
+import { SESSIONS } from './support/patterns.js';
 
 // The fixtures are real Kane CLI 0.10.4 runs on a 2-step cart test, scrubbed.
 const steps = [
@@ -118,7 +119,7 @@ test('ids, links and absolute paths from the run are collected so they can be ke
   const values = {
     SESSION_ID: 'sid-1234567',
     SHARE_URL: 'https://tm.example/share/US_TOKEN',
-    SESSION_DIR: '/opt/runner/.testmuai/kaneai/sessions/sid-1234567',
+    SESSION_DIR: `/opt/runner/${SESSIONS}/sid-1234567`,
     TEST_PATH: '/opt/repo/tickets/T-1_test.md',
   };
   const events = load('red').map((e) =>

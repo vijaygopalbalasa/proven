@@ -1,8 +1,9 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { settingsOf } from './config.js';
 import { Refusal } from './errors.js';
 import { fileAt, resolveCommit, short } from './git.js';
-import { sha256 } from './hash.js';
+import { canonicalJson, sha256 } from './hash.js';
 import { LANDMARK_STEP_TITLE, parseTestSteps, startUrlOf, ticketPaths } from './ticket.js';
 
 export function readLock(root, id) {
@@ -14,14 +15,19 @@ export function readLock(root, id) {
   } catch {
     throw new Refusal(`${ticketPaths(id).lock} is not valid JSON.`);
   }
-  for (const key of ['test_sha256', 'ticket_sha256', 'frozen_commit']) {
-    if (typeof lock[key] !== 'string' || !lock[key]) throw new Refusal(`${ticketPaths(id).lock} has no ${key}.`);
+  for (const key of ['test_sha256', 'ticket_sha256', 'frozen_commit', 'settings_sha256']) {
+    if (typeof lock[key] !== 'string' || !lock[key]) throw new Refusal(`${ticketPaths(id).lock} has no ${key}. Freeze ${id} again.`);
   }
   return lock;
 }
 
+export function settingsSha(settings) {
+  return sha256(canonicalJson(settings));
+}
+
 // Requirement 1.4: the test must match its lock, and the lock's commit F must hold the same bytes.
-export function checkFrozenTest(root, id) {
+// The settings that shape verdicts must also be the ones pinned at freeze.
+export function checkFrozenTest(root, id, config) {
   const p = ticketPaths(id);
   const lock = readLock(root, id);
   if (!lock) throw new Refusal(`${id} is not frozen yet. A person runs proven freeze ${id} first.`);
@@ -52,5 +58,14 @@ export function checkFrozenTest(root, id) {
   if (steps.length < 2 || steps[0].title !== LANDMARK_STEP_TITLE || !startUrl) {
     throw new Refusal(`${p.test} does not start with "${LANDMARK_STEP_TITLE}" and a start URL. Freeze it again with proven freeze ${id}.`);
   }
-  return { lock, testBuf, steps, startUrl };
+
+  const settings = settingsOf(config, startUrl);
+  if (settingsSha(settings) !== lock.settings_sha256) {
+    const pinned = lock.settings && typeof lock.settings === 'object' ? lock.settings : {};
+    const changed = Object.keys(settings).filter((k) => canonicalJson(settings[k]) !== canonicalJson(pinned[k]));
+    throw new Refusal(
+      `The Proven settings changed after ${id} was frozen: ${changed.join(', ') || 'unknown'}. Restore .proven/config.json to what the lock pinned (${p.lock}).`,
+    );
+  }
+  return { lock, testBuf, steps, startUrl, settings };
 }
