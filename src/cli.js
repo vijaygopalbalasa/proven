@@ -8,6 +8,7 @@ import { cmdDone } from './commands/done.js';
 import { cmdVerify } from './commands/verify.js';
 import { cmdRecheck } from './commands/recheck.js';
 import { cmdInit } from './commands/init.js';
+import { cmdBoard } from './commands/board.js';
 
 export const USAGE = `proven: a ticket closes only when Kane CLI saw it fail before the change and pass after it.
 
@@ -20,14 +21,16 @@ export const USAGE = `proven: a ticket closes only when Kane CLI saw it fail bef
                                      and run Kane again with the app at red (must fail) and at green (must pass)
   proven recheck [T-N ...]           replay every done ticket; reopen one whose failure a fresh run confirms
   proven init                        write Claude Code guard rails: a PreToolUse hook and a CLAUDE.md section
+  proven board [--port 8090] [--judge]
+                                     a local page with every ticket's evidence, updated live
 
 Kane is always kane-cli from PATH. Settings live in .proven/config.json (app, timeout_s, max_attempts)
 and are pinned when a ticket is frozen.
 Exit codes for red and done: 0 ok, 1 Kane failed (or already passes at red), 2 did not run.
 Exit codes for recheck: 0 all still pass, 1 a ticket reopened, 2 something did not run.`;
 
-const COMMANDS = { new: cmdNew, freeze: cmdFreeze, red: cmdRed, done: cmdDone, verify: cmdVerify, recheck: cmdRecheck, init: cmdInit };
-const VALUE_FLAGS = new Set(['url', 'landmark']);
+const COMMANDS = { new: cmdNew, freeze: cmdFreeze, red: cmdRed, done: cmdDone, verify: cmdVerify, recheck: cmdRecheck, init: cmdInit, board: cmdBoard };
+const VALUE_FLAGS = new Set(['url', 'landmark', 'port']);
 
 export function parseArgs(argv) {
   const positional = [];
@@ -79,7 +82,8 @@ export async function main(argv = process.argv.slice(2), { cwd = process.cwd(), 
     }
     if (flags.timeout !== undefined) throw new Refusal('There is no --timeout flag. The time limit is timeout_s in .proven/config.json, pinned at freeze.');
     const root = findRoot(cwd);
-    const config = name === 'verify' ? null : loadConfig(root);
+    // verify and board read only what is committed, so they do not need the settings.
+    const config = name === 'verify' || name === 'board' ? null : loadConfig(root);
     return await command({ root, cwd, config, out }, positional, flags);
   } catch (err) {
     if (err instanceof Refusal) {

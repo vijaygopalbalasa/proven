@@ -16,6 +16,35 @@ function provenShaped(root, id, commit, subject) {
   return subject.startsWith(`${id}: receipt`) && paths.includes(p.receipt) && paths.every((x) => x === p.state || x === p.receipt);
 }
 
+// Did Proven's own commits write every version of this ticket's state? Returns the reason it did not, or null.
+export function stateHistoryProblem(root, id) {
+  const rel = ticketPaths(id).state;
+  const log = git(root, ['log', '--format=%H%x09%s', '--', rel], { allowFail: true }) ?? '';
+  for (const line of log.split('\n').filter(Boolean)) {
+    const tab = line.indexOf('\t');
+    const commit = line.slice(0, tab);
+    if (!provenShaped(root, id, commit, line.slice(tab + 1))) {
+      return `${rel} was changed by commit ${short(commit)}, which Proven did not make. Proven trusts its state only from its own commits.`;
+    }
+  }
+  return null;
+}
+
+// The state as committed at HEAD, for reading only (the board). Never throws: a state Proven cannot trust comes back
+// as a problem.
+export function committedState(root, id) {
+  const rel = ticketPaths(id).state;
+  const problem = stateHistoryProblem(root, id);
+  if (problem) return { state: null, problem };
+  const committed = fileAt(root, 'HEAD', rel);
+  if (!committed) return { state: null, problem: null };
+  try {
+    return { state: JSON.parse(committed.toString('utf8')), problem: null };
+  } catch {
+    return { state: null, problem: `${rel} is not valid JSON.` };
+  }
+}
+
 // Requirement: decisions come from the state as committed at HEAD, written only by Proven's own commits.
 // The working-tree copy must match HEAD, so an edit there cannot change a decision.
 export function loadState(root, id) {
@@ -27,14 +56,8 @@ export function loadState(root, id) {
     const fix = committed ? `git checkout HEAD -- ${rel}` : `remove ${rel}`;
     throw new Refusal(`${rel} has uncommitted changes. Proven reads its state from commits only. To restore it: ${fix}`);
   }
-  const log = git(root, ['log', '--format=%H%x09%s', '--', rel], { allowFail: true }) ?? '';
-  for (const line of log.split('\n').filter(Boolean)) {
-    const tab = line.indexOf('\t');
-    const commit = line.slice(0, tab);
-    if (!provenShaped(root, id, commit, line.slice(tab + 1))) {
-      throw new Refusal(`${rel} was changed by commit ${short(commit)}, which Proven did not make. Proven trusts its state only from its own commits.`);
-    }
-  }
+  const problem = stateHistoryProblem(root, id);
+  if (problem) throw new Refusal(problem);
   if (!committed) return null;
   try {
     return JSON.parse(committed.toString('utf8'));
