@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { appFingerprint, appHashAt, appProblems } from '../src/run.js';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { canonicalJson, hashEntries, sha256 } from '../src/hash.js';
@@ -113,6 +114,30 @@ test('commitPaths commits exactly the named paths and leaves other staged work a
   });
   assert.equal(git(dir, 'diff-tree', '--no-commit-id', '--name-only', '-r', rec.commit), 'tickets/output-T-1/Result.md');
   assert.equal(git(dir, 'rev-parse', 'HEAD~1'), first.commit);
+});
+
+test('the app fingerprint matches the tree git commits, modes and symlinks included', (t) => {
+  const dir = tempDir(t);
+  git(dir, 'init', '-q', '-b', 'main');
+  git(dir, 'config', 'user.name', 'Proven Test');
+  git(dir, 'config', 'user.email', TEST_EMAIL);
+  git(dir, 'config', 'commit.gpgsign', 'false');
+  mkdirSync(join(dir, 'app'));
+  writeFileSync(join(dir, 'app', 'index.html'), '<h1>Your cart</h1>');
+  writeFileSync(join(dir, 'app', 'build.sh'), 'echo hi\n');
+  chmodSync(join(dir, 'app', 'build.sh'), 0o755);
+  symlinkSync('index.html', join(dir, 'app', 'home.html'));
+  git(dir, 'add', '-A');
+  git(dir, 'commit', '-q', '-m', 'app');
+  assert.equal(appFingerprint(dir, 'app'), appHashAt(dir, 'HEAD', 'app'));
+
+  chmodSync(join(dir, 'app', 'build.sh'), 0o644);
+  assert.notEqual(appFingerprint(dir, 'app'), appHashAt(dir, 'HEAD', 'app'), 'a mode change counts');
+  chmodSync(join(dir, 'app', 'build.sh'), 0o755);
+  rmSync(join(dir, 'app', 'home.html'));
+  symlinkSync('build.sh', join(dir, 'app', 'home.html'));
+  assert.notEqual(appFingerprint(dir, 'app'), appHashAt(dir, 'HEAD', 'app'), 'a symlink counts by its link text');
+  assert.deepEqual(appProblems(dir, 'app'), { ignored: [], symlinks: ['app/home.html'] });
 });
 
 test('the zip reader reads stored and deflated entries, and finds the failing screenshot', (t) => {

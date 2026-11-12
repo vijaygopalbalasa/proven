@@ -1,17 +1,51 @@
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { lstatSync, mkdirSync, readFileSync, readlinkSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { classifyRun } from './classify.js';
 import { fileSha256, findPack } from './evidence.js';
-import { head, isIgnored, worktreeFiles } from './git.js';
-import { hashEntries } from './hash.js';
+import { blob, commitFiles, head, ignoredFiles, isIgnored, worktreeFiles } from './git.js';
+import { hashTree } from './hash.js';
 import { runKane } from './kane.js';
 import { scrubText } from './leak.js';
 import { probe } from './probe.js';
 import { ticketPaths } from './ticket.js';
 
-// Everything git would commit from the app folder, as one hash.
+// The app folder as git would commit it from the working tree: mode, content (link text for a symlink), path.
 export function appFingerprint(root, app) {
-  return hashEntries(worktreeFiles(root, app).map((p) => ({ path: p, content: readFileSync(join(root, p)) })));
+  return hashTree(
+    worktreeFiles(root, app).map((p) => {
+      const full = join(root, p);
+      const st = lstatSync(full);
+      if (st.isSymbolicLink()) return { path: p, mode: '120000', content: Buffer.from(readlinkSync(full)) };
+      return { path: p, mode: st.mode & 0o100 ? '100755' : '100644', content: readFileSync(full) };
+    }),
+  );
+}
+
+// The app folder as committed, hashed the same way.
+export function appHashAt(root, commit, app) {
+  return hashTree(commitFiles(root, commit, app).map((f) => ({ path: f.path, mode: f.mode, content: blob(root, f.blob) })));
+}
+
+// What the server could show Kane that no commit would hold: ignored files and symlinks.
+export function appProblems(root, app) {
+  const ignored = ignoredFiles(root, app);
+  const symlinks = worktreeFiles(root, app).filter((p) => lstatSync(join(root, p)).isSymbolicLink());
+  return { ignored, symlinks };
+}
+
+function list(paths) {
+  return paths.slice(0, 5).join(', ') + (paths.length > 5 ? ', ...' : '');
+}
+
+export function appRefusal(root, app) {
+  const { ignored, symlinks } = appProblems(root, app);
+  if (ignored.length) {
+    return `${app} holds files that git ignores: ${list(ignored)}. The server could show them to Kane, but no commit would keep them. Remove them, or stop ignoring them.`;
+  }
+  if (symlinks.length) {
+    return `${app} holds a symlink: ${list(symlinks)}. Replace it with the real file, so the commit holds what Kane sees.`;
+  }
+  return null;
 }
 
 function saveRaw(root, id, label, raw) {
@@ -30,6 +64,8 @@ export async function runFrozenTest(ctx, { id, label, steps, startUrl, kane }) {
   const p = ticketPaths(id);
 
   if (kane.fake) out.both(`Kane: ${kane.label}. This run is not Kane CLI evidence.`);
+  const unsafe = appRefusal(root, config.app);
+  if (unsafe) return { outcome: 'did-not-run', reason: unsafe, exact: [] };
   const before = await probe(startUrl);
   if (!before.ok) {
     return { outcome: 'did-not-run', reason: `the app is not answering at ${startUrl} (${before.detail})`, exact: [] };
@@ -56,6 +92,7 @@ export async function runFrozenTest(ctx, { id, label, steps, startUrl, kane }) {
 
   const verdict = classifyRun({ ...result, steps, timeoutS: config.timeoutS, command: kane.command });
   verdict.headBefore = headBefore;
+  verdict.appJudged = appBefore;
 
   if (verdict.outcome === 'did-not-run' && (result.exitCode === 2 || result.spawnError)) {
     const last = result.stderr.split('\n').map((l) => l.trim()).filter(Boolean).at(-1);
@@ -68,6 +105,9 @@ export async function runFrozenTest(ctx, { id, label, steps, startUrl, kane }) {
     else if (head(root) !== headBefore) Object.assign(verdict, { outcome: 'did-not-run', reason: 'a commit was made while Kane ran' });
     else if (appFingerprint(root, config.app) !== appBefore) {
       Object.assign(verdict, { outcome: 'did-not-run', reason: `${config.app} changed while Kane ran, so Kane's verdict is not about the code as it is now` });
+    } else {
+      const unsafeAfter = appRefusal(root, config.app);
+      if (unsafeAfter) Object.assign(verdict, { outcome: 'did-not-run', reason: unsafeAfter });
     }
   }
 

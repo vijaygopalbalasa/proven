@@ -220,7 +220,8 @@ test('the gate: freeze, red, a failed attempt, did-not-run cases, green, receipt
   assert.equal(r.code, 0, r.stdout);
   assert.match(r.stdout, /^CONFIRMED receipts\/T-1\.json, but made with a fake Kane, not Kane CLI$/m);
   assert.match(r.stdout, /^ {2}note {2}red ran on fake \(PROVEN_KANE_BIN\), green ran on fake \(PROVEN_KANE_BIN\)$/m);
-  assert.equal((r.stdout.match(/^ {2}ok /gm) ?? []).length, 7, r.stdout);
+  assert.equal((r.stdout.match(/^ {2}ok /gm) ?? []).length, 10, r.stdout);
+  assert.doesNotMatch(r.stdout, /FAIL/);
   r = await repo.run(['verify', RECEIPT, '--replay']);
   assert.equal(r.code, 2);
   assert.match(r.stderr, /not built yet/);

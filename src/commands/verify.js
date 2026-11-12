@@ -18,7 +18,7 @@ export async function cmdVerify({ cwd, out }, [file], flags) {
   const rel = relative(root, abs).split('\\').join('/');
   if (rel.startsWith('..') || isAbsolute(rel)) throw new Refusal(`${file} is not inside a git repository.`);
 
-  const { receipt, checks } = verifyReceipt(root, readFileSync(abs), rel);
+  const { receipt, checks } = verifyReceipt(root, readFileSync(abs));
   const ok = checks.every((c) => c.ok);
   // Integrity and provenance are separate: a receipt made with the test-only fake Kane can verify,
   // but it must never read as Kane CLI evidence.

@@ -1,7 +1,8 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { Refusal } from './errors.js';
-import { changedPaths, fileAt, git, short } from './git.js';
+import { changedPaths, commitsTouchingOldestFirst, fileAt, git, lastCommitTouching, parentOf, short } from './git.js';
+import { canonicalJson } from './hash.js';
 import { assertClean } from './leak.js';
 import { ticketPaths } from './ticket.js';
 
@@ -43,6 +44,53 @@ export function loadState(root, id) {
     return JSON.parse(committed.toString('utf8'));
   } catch {
     throw new Refusal(`${rel} is not valid JSON.`);
+  }
+}
+
+export const RED_FIELDS = [
+  'commit',
+  'failed_step',
+  'failed_step_title',
+  'kane_one_liner',
+  'kane_reason',
+  'evidence_sha256',
+  'kane',
+  'kane_cli',
+  'duration_s',
+  'credits',
+];
+const RED_NOT_EMPTY = ['commit', 'failed_step', 'failed_step_title', 'kane'];
+
+// Cheap invariants on the red record, which an agent with a shell could otherwise rewrite:
+// every field is present (nothing is assumed), red.commit is the parent of the first state commit after the
+// lock (the commit red was recorded on), and no later state commit changes the red record.
+export function checkRedRecord(root, id, state) {
+  const p = ticketPaths(id);
+  const red = state.red;
+  if (!red || typeof red !== 'object') throw new Refusal(`${p.state} has no red record. A person needs to look at ${id}.`);
+  for (const key of RED_FIELDS) {
+    if (!(key in red) || (RED_NOT_EMPTY.includes(key) && (red[key] === null || red[key] === ''))) {
+      throw new Refusal(`${p.state} is missing red.${key}. A person needs to look at ${id}.`);
+    }
+  }
+  const lockCommit = lastCommitTouching(root, 'HEAD', p.lock);
+  const stateCommits = lockCommit ? commitsTouchingOldestFirst(root, lockCommit, 'HEAD', p.state) : [];
+  if (!stateCommits.length) throw new Refusal(`No commit after the lock records red in ${p.state}. A person needs to look at ${id}.`);
+  const recordedOn = parentOf(root, stateCommits[0]);
+  if (recordedOn !== red.commit) {
+    throw new Refusal(
+      `The red record in ${p.state} names ${short(red.commit)}, but red was recorded on ${short(recordedOn)}. A person needs to look at ${id}.`,
+    );
+  }
+  const first = JSON.parse(fileAt(root, stateCommits[0], p.state)?.toString('utf8') ?? 'null');
+  if (!first || first.status !== 'red' || canonicalJson(first.red) !== canonicalJson(red)) {
+    throw new Refusal(`The red record in ${p.state} changed in commit ${short(stateCommits.at(-1))}. A person needs to look at ${id}.`);
+  }
+  for (const c of stateCommits.slice(1)) {
+    const later = JSON.parse(fileAt(root, c, p.state)?.toString('utf8') ?? 'null');
+    if (!later || canonicalJson(later.red) !== canonicalJson(first.red)) {
+      throw new Refusal(`The red record in ${p.state} changed in commit ${short(c)}. A person needs to look at ${id}.`);
+    }
   }
 }
 

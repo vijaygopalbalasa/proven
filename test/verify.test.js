@@ -35,7 +35,11 @@ test('verify: a receipt edited after it was written is a MISMATCH', async (t) =>
   const r = await repo.run(['verify', RECEIPT]);
   assert.equal(r.code, 1);
   assert.match(r.stdout, /^MISMATCH receipts\/T-1\.json/m);
-  assert.deepEqual(failed(r.stdout), ['the receipt hash matches its contents', "the receipt is committed as it is, with Kane's recording"]);
+  assert.deepEqual(failed(r.stdout), [
+    'the receipt hash matches its contents',
+    'the state history records this red, then one commit per failed attempt',
+    "the receipt is committed as it is, with Kane's recording",
+  ]);
 });
 
 test('verify: a test edited after freeze is a MISMATCH, even in a re-sealed, committed receipt', async (t) => {
@@ -46,7 +50,7 @@ test('verify: a test edited after freeze is a MISMATCH, even in a re-sealed, com
   forge(repo, (r) => (r.green.commit = loosened));
   const r = await repo.run(['verify', RECEIPT]);
   assert.equal(r.code, 1);
-  assert.deepEqual(failed(r.stdout), ['the frozen test did not change between red and green']);
+  assert.ok(failed(r.stdout).includes('the frozen test did not change between red and green'), r.stdout);
   assert.match(r.stdout, /tickets\/T-1_test\.md at green [0-9a-f]{7} is not the frozen test/);
 });
 
@@ -61,7 +65,7 @@ test('verify: a test changed and changed back between red and green is a MISMATC
   forge(repo, (r) => (r.green.commit = back));
   const r = await repo.run(['verify', RECEIPT]);
   assert.equal(r.code, 1);
-  assert.deepEqual(failed(r.stdout), ['the frozen test did not change between red and green']);
+  assert.ok(failed(r.stdout).includes('the frozen test did not change between red and green'), r.stdout);
   assert.match(r.stdout, /2 commit\(s\) between red and green changed tickets\/T-1_test\.md/);
 });
 
@@ -77,7 +81,49 @@ test('verify: a red commit that is not an ancestor of green is a MISMATCH', asyn
   forge(repo, (r) => (r.red.commit = side));
   const r = await repo.run(['verify', RECEIPT]);
   assert.equal(r.code, 1);
-  assert.deepEqual(failed(r.stdout), ['red is an ancestor of green']);
+  assert.ok(failed(r.stdout).includes('red is an ancestor of green'), r.stdout);
+  assert.match(r.stdout, /red [0-9a-f]{7} is not an ancestor of green [0-9a-f]{7}/);
+});
+
+test('verify: paths come from the ticket id, not from the receipt', async (t) => {
+  const repo = await greenRepo(t);
+  forge(repo, (r) => {
+    r.frozen.test = 'tickets/T-1.md';
+    r.frozen.test_sha256 = r.frozen.ticket_sha256;
+  });
+  const r = await repo.run(['verify', RECEIPT]);
+  assert.equal(r.code, 1);
+  assert.ok(failed(r.stdout).includes("the receipt's paths match ticket T-1"), r.stdout);
+  assert.match(r.stdout, /frozen\.test is tickets\/T-1\.md, not tickets\/T-1_test\.md/);
+});
+
+test('verify: settings that differ from the lock are a MISMATCH', async (t) => {
+  const repo = await greenRepo(t);
+  forge(repo, (r) => (r.settings.max_attempts = 99));
+  const r = await repo.run(['verify', RECEIPT]);
+  assert.equal(r.code, 1);
+  assert.deepEqual(failed(r.stdout), ['the lock, in its own commit after the frozen commit, names it and pins these settings']);
+});
+
+test('verify: a red that the state history does not show is a MISMATCH', async (t) => {
+  const repo = await greenRepo(t);
+  forge(repo, (r) => (r.red.kane_reason = 'Something else entirely.'));
+  let r = await repo.run(['verify', RECEIPT]);
+  assert.equal(r.code, 1);
+  assert.deepEqual(failed(r.stdout), ['the state history records this red, then one commit per failed attempt']);
+  assert.match(r.stdout, /red\.kane_reason differs/);
+
+  repo.git('reset', '-q', '--hard', 'HEAD~1');
+  forge(repo, (r) => (r.red.commit = r.frozen.commit));
+  r = await repo.run(['verify', RECEIPT]);
+  assert.equal(r.code, 1);
+  assert.ok(failed(r.stdout).includes('the state history records this red, then one commit per failed attempt'), r.stdout);
+
+  repo.git('reset', '-q', '--hard', 'HEAD~1');
+  forge(repo, (r) => (r.green.failed_attempts = 3));
+  r = await repo.run(['verify', RECEIPT]);
+  assert.deepEqual(failed(r.stdout), ['the state history records this red, then one commit per failed attempt']);
+  assert.match(r.stdout, /0 failed attempts in the history, 3 in the receipt/);
 });
 
 test('verify: a receipt naming a commit that does not exist is a MISMATCH', async (t) => {

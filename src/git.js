@@ -1,5 +1,5 @@
 import { execFileSync, spawnSync } from 'node:child_process';
-import { existsSync, rmSync } from 'node:fs';
+import { existsSync, lstatSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { Refusal } from './errors.js';
@@ -91,27 +91,60 @@ export function isIgnored(root, path) {
   return result.status === 0;
 }
 
-// Files under a folder that git would track: tracked or untracked, not ignored, present on disk.
+function lexists(p) {
+  try {
+    lstatSync(p);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// Files under a folder that git would track: tracked or untracked, not ignored, present on disk
+// (a symlink counts as present even when its target is not).
 export function worktreeFiles(root, dir) {
   const out = git(root, ['ls-files', '-z', '-c', '-o', '--exclude-standard', '--', dir]);
   const seen = new Set();
   for (const p of out.split('\0')) {
-    if (p && !seen.has(p) && existsSync(join(root, p))) seen.add(p);
+    if (p && !seen.has(p) && lexists(join(root, p))) seen.add(p);
   }
   return [...seen].sort();
 }
 
-// Files under a folder at a commit: [{ path, blob }].
+// Untracked files under a folder that git ignores: on disk, maybe served, never committed.
+export function ignoredFiles(root, dir) {
+  const out = git(root, ['ls-files', '-z', '-o', '-i', '--exclude-standard', '--', dir]);
+  return [...new Set(out.split('\0').filter(Boolean))].sort();
+}
+
+// Files under a folder at a commit: [{ path, blob, mode }].
 export function commitFiles(root, commit, dir) {
   const out = git(root, ['ls-tree', '-r', '-z', commit, '--', dir]);
   const files = [];
   for (const line of out.split('\0')) {
     if (!line) continue;
     const tab = line.indexOf('\t');
-    const [, type, blob] = line.slice(0, tab).split(' ');
-    if (type === 'blob') files.push({ path: line.slice(tab + 1), blob });
+    const [mode, type, blob] = line.slice(0, tab).split(' ');
+    if (type === 'blob') files.push({ path: line.slice(tab + 1), blob, mode });
   }
   return files;
+}
+
+export function parentOf(root, commit) {
+  const out = git(root, ['rev-parse', '--verify', '-q', `${commit}^`], { allowFail: true });
+  return out ? out.trim() : null;
+}
+
+// Commits in from..to that change path, oldest first.
+export function commitsTouchingOldestFirst(root, from, to, path) {
+  const out = git(root, ['rev-list', '--reverse', `${from}..${to}`, '--', path], { allowFail: true });
+  return out ? out.split('\n').filter(Boolean) : [];
+}
+
+// The last commit up to `ref` that changed path.
+export function lastCommitTouching(root, ref, path) {
+  const out = git(root, ['log', '-1', '--format=%H', ref, '--', path], { allowFail: true });
+  return out ? out.trim() || null : null;
 }
 
 export function blob(root, id) {

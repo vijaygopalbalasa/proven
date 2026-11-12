@@ -5,8 +5,6 @@ import { Refusal } from '../errors.js';
 import { displayPath, failingScreenshot, saveScreenshot } from '../evidence.js';
 import {
   assertOnlyPaths,
-  blob,
-  commitFiles,
   commitPaths,
   commitsTouching,
   fileAt,
@@ -21,8 +19,8 @@ import { hashEntries, sha256 } from '../hash.js';
 import { findLeaks } from '../leak.js';
 import { checkFrozenTest } from '../lock.js';
 import { RECORDING_EXCLUDES, recordingAt, recordingFromWorktree, sealReceipt } from '../receipt.js';
-import { appFingerprint, kaneWords, runFrozenTest } from '../run.js';
-import { checkAttemptHistory, loadState, statusOf, writeJson, writeState } from '../state.js';
+import { appFingerprint, appHashAt, appRefusal, kaneWords, runFrozenTest } from '../run.js';
+import { checkAttemptHistory, checkRedRecord, loadState, statusOf, writeJson, writeState } from '../state.js';
 import { checkId, parseTicket, ticketPaths } from '../ticket.js';
 
 function screenshotLine(root, id, label, run) {
@@ -36,11 +34,6 @@ function screenshotLine(root, id, label, run) {
   } catch (err) {
     return `Screenshot: could not read the evidence pack (${err.message})`;
   }
-}
-
-// The app folder at a commit, hashed the same way as appFingerprint hashes the working tree.
-function appHashAt(root, commit, app) {
-  return hashEntries(commitFiles(root, commit, app).map((f) => ({ path: f.path, content: blob(root, f.blob) })));
 }
 
 // Kane writes its recording; Proven commits it byte for byte, so it must not carry private data.
@@ -75,7 +68,8 @@ export async function cmdDone(ctx, [id]) {
   }
   if (status !== 'red' && status !== 'in-progress') throw new Refusal(`${p.state} has an unknown status "${status}".`);
 
-  const redKane = state.red?.kane ?? 'kane-cli';
+  checkRedRecord(root, id, state);
+  const redKane = state.red.kane;
   if (redKane !== kane.label) {
     throw new Refusal(`${id} went red on ${redKane}, but this run would use ${kane.label}. Red and green must run on the same Kane.`);
   }
@@ -147,7 +141,12 @@ export async function cmdDone(ctx, [id]) {
   // Kane passed. Every check runs before anything is committed.
   if (!isAncestor(root, redCommit, 'HEAD')) throw new Refusal(`The red commit ${short(redCommit)} is not an ancestor of HEAD.`);
   if (sha256(readFileSync(join(root, p.test))) !== lock.test_sha256) throw new Refusal(`${p.test} is not byte-identical to its lock.`);
-  if (appFingerprint(root, config.app) === appHashAt(root, redCommit, config.app)) {
+  const unsafe = appRefusal(root, config.app);
+  if (unsafe || appFingerprint(root, config.app) !== run.appJudged) {
+    out.both(`did not run: ${unsafe ?? `${config.app} changed after Kane ran`}\nNo attempt was counted.`);
+    return 2;
+  }
+  if (run.appJudged === appHashAt(root, redCommit, config.app)) {
     out.both(
       `did not run: Kane passed, but ${config.app} is the same as at red ${short(redCommit)}. A pass on unchanged code proves nothing, so ${id} stays open.\nNo attempt was counted.`,
     );
@@ -169,6 +168,9 @@ export async function cmdDone(ctx, [id]) {
   const g = commitPaths(root, { paths: [config.app], message: `${id}: app change that Kane passed` });
   if (g.created) assertOnlyPaths(root, g.commit, [config.app]);
   const G = g.commit;
+  if (appHashAt(root, G, config.app) !== run.appJudged) {
+    throw new Error(`${config.app} at ${short(G)} is not the code Kane judged`);
+  }
   if (objectAt(root, G, config.app) === objectAt(root, redCommit, config.app)) {
     throw new Error(`${config.app} at green ${short(G)} is the same as at red ${short(redCommit)}`);
   }
@@ -192,11 +194,11 @@ export async function cmdDone(ctx, [id]) {
       failed_step_title: red.failed_step_title,
       kane_one_liner: red.kane_one_liner,
       kane_reason: red.kane_reason,
-      evidence_sha256: red.evidence_sha256 ?? null,
-      kane: redKane,
-      kane_cli: red.kane_cli ?? null,
-      duration_s: red.duration_s ?? null,
-      credits: red.credits ?? null,
+      evidence_sha256: red.evidence_sha256,
+      kane: red.kane,
+      kane_cli: red.kane_cli,
+      duration_s: red.duration_s,
+      credits: red.credits,
     },
     green: {
       commit: G,
