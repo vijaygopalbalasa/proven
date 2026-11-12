@@ -14,7 +14,7 @@ writes receipts. This document covers Requirements 1 to 8. Requirements 1 to 4 p
 | `tickets/T-N.lock.json` | `proven freeze` | alone, right after F | sha256 of the test and the ticket, F, and the pinned settings with their sha256 |
 | `.proven/state/T-N.json` | `proven red`, `proven done`, `proven recheck` | alone (red, each failed attempt, a reopen), with the receipt (green) | status, the red record, attempts, last failure, the reopen |
 | `receipts/T-N.json` | `proven done` | with the state, right after G | the receipt |
-| `tickets/output-T-N/` | Kane | never (gitignored) | Kane's recording: it carries Kane account and session ids, so it stays local for replays on this machine |
+| `tickets/output-T-N/` | Kane | never (gitignored) | Kane's recording: it carries Kane account and session ids, so it stays local, and it never decides a verdict (moved aside for every run) |
 | `.proven/config.json` | a person | yes | `app`, `timeout_s`, `max_attempts` (nothing else is allowed) |
 | `.proven/runs/` | Proven | never (gitignored) | raw Kane output, copies of failing screenshots for the agent, and `T-N/active.json` while Kane runs, for the board |
 | `.testmuai/` | Kane | never (gitignored) | evidence packs, which carry the runner's name and email |
@@ -102,7 +102,11 @@ Proven lists the changed paths and stops if any falls outside the allowed set.
 ## Running Kane
 
 `kane-cli testmd run tickets/T-N_test.md --agent --headless`, from the repo root, as its own process group, while
-Proven serves the snapshot. Proven keeps its own timer (`timeout_s`, default 300) and kills the whole group on timeout
+Proven serves the snapshot. Kane would replay the steps it recorded in `tickets/output-T-N/`, a folder that is never
+committed and that anyone with a shell can edit, so a tampered recording could pass a broken app. Proven therefore
+copies that folder out of the repository and removes it before every run, so Kane authors every step from the frozen
+test, and afterwards puts it back exactly as it was (or removes the one Kane wrote, if there was none). Kane's output
+from the run is kept in `.proven/runs/` and its evidence pack in `.testmuai/`. Proven keeps its own timer (`timeout_s`, default 300) and kills the whole group on timeout
 or Ctrl+C, because Kane's launcher ignores SIGTERM and runs the real CLI as a child. Decisions use only stdout NDJSON.
 Kane's stderr is shown, with emails and home paths masked, only as a hint when Kane did not start. Before Kane starts,
 Proven checks that the start URL answers HTTP 200 from the snapshot and, if not, says "did not run: the app is not
@@ -152,12 +156,11 @@ files under the app folder, and the start URL must be local with a port (for exa
 ## Replay (4.3)
 
 `verify --replay` runs only when the git checks pass. It takes the frozen test from F, refuses to run when the test
-in the working tree differs (Kane runs on that path), and runs Kane on it twice, each time with `--author` so Kane
-authors every step again from the test's text: first with the tree at red (`red.app_tree`) served on the start URL's
-port, where Kane must fail at the recorded step, then with the tree at green, where Kane must pass. A local recording
-cannot decide the verdict, a fresh clone behaves the same, and Kane's adaptive heal (up to 3 re-authoring attempts on
-a replay miss, then a full re-author) cannot run into the time limit. A side that disagrees makes the result
-MISMATCH. When Kane does not run, the line says "replay skipped" with the reason
+in the working tree differs (Kane runs on that path), and runs Kane on it twice, fresh like every run (no recording,
+so Kane authors every step from the test's text): first with the tree at red (`red.app_tree`) served on the start
+URL's port, where Kane must fail at the recorded step, then with the tree at green, where Kane must pass. A fresh clone
+behaves the same, and Kane's adaptive heal (up to 3 re-authoring attempts on a replay miss, then a full re-author)
+cannot run into the time limit. A side that disagrees makes the result MISMATCH. When Kane does not run, the line says "replay skipped" with the reason
 and the git result stands; without a red replay there is nothing to compare, so green is not tried. A replay writes
 nothing to git.
 
@@ -166,12 +169,13 @@ nothing to git.
 `proven recheck [T-N ...]` takes every ticket whose state is done, and skips (with the reason) one that fails the
 checks done makes (the frozen test, the lock chain, the red record) or whose receipt does not verify. It refuses while
 the app folder has uncommitted changes, so a reopen names exactly the code Kane judged: the app tree at HEAD. For each
-ticket, Kane replays the frozen test with `--no-adaptive-heal`, so a replay miss fails instead of healing. A pass or a
-did not run changes nothing. A failure is confirmed by one fresh run with `--author` (Kane CLI 0.10.4: re-author every
-step). If that passes, the ticket stays done. If it fails too, and no commit was made meanwhile, the state is written
-again in a commit of its own on HEAD: status reopened, attempts 0, a new red record from the fresh run (commit = HEAD,
-the app tree, step, Kane's words, credits, evidence hash), and `reopened` with the replay's failure and the earlier
-receipt (path, the commit that wrote it, its sha256, its green). Exit 1 when a ticket reopened, 2 when something did
+ticket, Kane runs the frozen test with `--no-adaptive-heal` and, like every run, without its recording, so it authors
+every step fresh; Requirement 5 asked for a replay, but a replay would trust the editable recording, so a tampered one
+could say "still passes". A pass or a did not run changes nothing. A failure is confirmed by a second fresh run. If
+that passes, the ticket stays done. If it fails too, and no commit was made meanwhile, the state is written again in a
+commit of its own on HEAD: status reopened, attempts 0, a new red record from the second run (commit = HEAD, the app
+tree, step, Kane's words, credits, evidence hash), and `reopened` with the first run's failure and the earlier receipt
+(path, the commit that wrote it, its sha256, its green). Exit 1 when a ticket reopened, 2 when something did
 not run, 0 otherwise.
 
 `proven done` works on a reopened ticket as on a red one. Its receipt carries `previous: { commit, receipt_sha256 }`,

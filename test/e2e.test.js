@@ -166,7 +166,7 @@ test('the gate: freeze, red, a failed attempt, did-not-run cases, green, receipt
   assert.equal(repo.git('rev-parse', `${G}~1`), beforeGreen);
   assert.deepEqual(repo.changed(G), ['demo/app/cart.js']);
   assert.deepEqual(repo.changed('HEAD'), [STATE, RECEIPT]);
-  assert.equal(repo.exists('tickets/output-T-1/Result.md'), true, 'the recording stays on disk for cheap local replays');
+  assert.equal(repo.exists('tickets/output-T-1'), false, 'Kane\'s recording is put back as it was: there was none');
   assert.equal(repo.git('ls-files', 'tickets/output-T-1'), '');
   assert.equal(repo.git('status', '--porcelain', '--', 'demo/app', 'tickets', 'receipts', '.proven/state'), '');
   assert.equal(repo.git('ls-files', '.testmuai'), '');
@@ -354,13 +354,16 @@ test("Kane's recording is never committed, even without the ignore rule", async 
   const repo = await makeRepo(t);
   repo.write('.gitignore', repo.read('.gitignore').replace(/^tickets\/output-\*\/$/m, '').replace(/^\*\*\/output-\*\/.*$/gm, ''));
   repo.git('commit', '-q', '-am', 'Forget the recording rule');
+  // A recording from a person's own Kane run, before Proven's runs.
+  repo.write('tickets/output-T-1/Result.md', '# a recording\n');
   repo.write('tickets/T-1.md', couponTicket(repo.url));
   assert.equal((await repo.run(['freeze', 'T-1'])).code, 0);
   assert.equal((await repo.run(['red', 'T-1'], { scenario: 'red' })).code, 0);
   assert.equal((await repo.run(['done', 'T-1'], { scenario: 'red' })).code, 1);
   fixCoupon(repo);
   assert.equal((await repo.run(['done', 'T-1'], { scenario: 'green' })).code, 0);
-  assert.equal(repo.git('status', '--porcelain', '--', 'tickets/output-T-1').startsWith('?? tickets/output-T-1/'), true);
+  assert.equal(repo.git('status', '--porcelain', '--', 'tickets/output-T-1'), '?? tickets/output-T-1/');
+  assert.equal(repo.read('tickets/output-T-1/Result.md'), '# a recording\n');
   assert.equal((await repo.run(['verify', RECEIPT])).code, 0);
   assert.deepEqual(findCommittedLeaks(repo.dir, { calls: repo.kaneCalls() }), []);
 });

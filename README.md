@@ -87,16 +87,17 @@ id, never from the receipt.
 
 `--replay` re-checks red itself, not only green. Proven serves the app as it was at the red commit and runs Kane on the
 frozen test, which must fail at the recorded step, then serves the app as it was at the green commit, where Kane must
-pass. Each side is one fresh run with `--author`, so Kane works from the frozen test's text, not from a recording.
-Either side disagreeing is a MISMATCH. When Kane cannot run (signed out, no network, time limit), the output says
+pass. Each side is a fresh run: Kane works from the frozen test's text, never from a recording. Either side
+disagreeing is a MISMATCH. When Kane cannot run (signed out, no network, time limit), the output says
 "replay skipped" with the reason, and the git result stands.
 
 ## Recheck and reopen
 
-`proven recheck` replays the frozen test of every done ticket against the app as committed now, with
-`--no-adaptive-heal`, so a replay miss fails instead of healing. A replay can miss for a harmless reason, so a failure
-is confirmed by one fresh run with `--author`, which authors every step again. Only a confirmed failure reopens the
-ticket: a state commit of its own records the failing step and Kane's reason. The agent then needs a new green through
+`proven recheck` runs the frozen test of every done ticket again, against the app as committed now, with
+`--no-adaptive-heal`. Kane's local recording is moved aside, so Kane authors every step fresh and an edited recording
+cannot say "still passes". A browser agent can fail for a harmless reason, so a failure is confirmed by a second fresh
+run before anything changes. Only a confirmed failure reopens the ticket: a state commit of its own records the commit
+and app tree Kane judged, the failing step, Kane's reason and the evidence hash. The agent then needs a new green through
 `proven done`, and the new receipt links the earlier one. `verify` checks that link and the earlier receipt too.
 
 ## The board
@@ -126,6 +127,9 @@ Exit codes for `red` and `done`: 0 ok, 1 Kane failed (or, at red, the test alrea
 
 - Kane judges a snapshot, never the live folder. Proven writes the app folder as a git tree (what a commit would
   hold), serves exactly that on the start URL's port for the whole run, and on a pass commits exactly that tree.
+- Kane's recording (`tickets/output-T-N/`) never decides a verdict, because it is not committed and anyone with a
+  shell can edit it. Proven moves it out of the repository for every run, so Kane authors every step from the frozen
+  test, and puts it back afterwards exactly as it was.
 - Each test starts by opening the start URL and checking a landmark text. Proven checks that the URL answers HTTP 200
   before Kane starts.
 - Red runs right after freeze, on the commit that locked the test.
@@ -150,11 +154,11 @@ pinned when a ticket is frozen.
 - Kane's verdicts can be flaky. That is why red needs a passing landmark and a failing later step, why anything unclear
   counts as "did not run", and why recheck confirms a failed replay with a fresh run before it reopens anything.
 - Evidence packs are not committed, because they carry the runner's name and email. Proven keeps only their sha256.
-- Kane's recording folder (`tickets/output-T-N/`) stays local, because it carries Kane account and session ids. A fresh
-  clone records again, so its first replays author every step and cost more credits.
-- `recheck` and `verify --replay` run Kane, so they need Kane CLI, Chrome, a login and credits (`--replay` makes two
-  fresh runs). Their `--no-adaptive-heal` and `--author` runs have so far run only against the test fake, not against
-  live Kane.
+- Kane's recording folder (`tickets/output-T-N/`) stays local, because it carries Kane account and session ids, and
+  it is never used for a verdict. So every run authors every step: a minute or two and about 10 to 30 credits each.
+- `recheck` and `verify --replay` run Kane, so they need Kane CLI, Chrome, a login and credits. `recheck` makes one
+  run per done ticket and a second one to confirm a failure; `--replay` makes two. So far they have run only against
+  the test fake, not against live Kane.
 - `recheck` judges the app as committed and refuses while the app folder has uncommitted changes.
 - The tests use a fake Kane through the `PROVEN_KANE_BIN` variable. Every run made that way says so in the output, the
   state and the receipt, and `verify` flags such a receipt.

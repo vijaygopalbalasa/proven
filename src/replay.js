@@ -29,9 +29,10 @@ function describe(side, commit, expected, verdict) {
 }
 
 // Requirement 4.3: serve the app as it was at the red commit and run Kane on the frozen test (it must fail at the
-// recorded step), then serve the app as it was at the green commit (it must pass). Each side is one fresh run with
-// --author, so Kane authors every step again from the frozen test: neither a local recording nor a moved button
-// decides the verdict, a fresh clone behaves the same, and no heal cycle runs into the time limit.
+// recorded step), then serve the app as it was at the green commit (it must pass). Like every Proven run, each side
+// runs with Kane's local recording moved aside, so Kane authors every step again from the frozen test: neither a
+// recording nor a moved button decides the verdict, a fresh clone behaves the same, and no heal cycle runs into the
+// time limit.
 // Returns { lines: [{ status: 'ok'|'fail'|'skip', text, more? }], agreed }.
 // agreed is true (both sides agree), false (a side disagrees) or null (Kane did not run: the git checks stand).
 export async function replayReceipt(ctx, receipt) {
@@ -70,7 +71,6 @@ export async function replayReceipt(ctx, receipt) {
       kane,
       tree: s.tree,
       timeoutS,
-      extraArgs: ['--author'],
       what: `the app at ${s.side} ${short(s.commit)}`,
     });
     const agrees = replayAgrees(s.expected, verdict);

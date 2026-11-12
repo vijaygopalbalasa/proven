@@ -41,10 +41,10 @@ test('the demo story: T-3\'s natural fix breaks T-1, recheck reopens it, and the
   takeCodesFromFile(repo);
   await run(['done', 'T-3'], 'green');
 
-  // T-1 replays and fails, a fresh run confirms it, and T-1 reopens. T-3 still passes.
+  // Kane fails T-1, a second fresh run confirms it, and T-1 reopens. T-3 still passes.
   let r = await run(['recheck'], ['replay-fail', 'red', 'green'], 1);
-  assert.match(r.stdout, /^T-1 reopened at [0-9a-f]{7}: Kane failed step 2 \(Apply SAVE10\) on a fresh run too\.$/m);
-  assert.match(r.stdout, /^T-3 still passes: Kane replayed its frozen test on [0-9a-f]{7}\.$/m);
+  assert.match(r.stdout, /^T-1 reopened at [0-9a-f]{7}: Kane failed step 2 \(Apply SAVE10\) on the second run too\.$/m);
+  assert.match(r.stdout, /^T-3 still passes: Kane ran its frozen test fresh on [0-9a-f]{7}\.$/m);
   assert.equal(repo.json('.proven/state/T-1.json').status, 'reopened');
   assert.equal(repo.json('.proven/state/T-3.json').status, 'done');
 

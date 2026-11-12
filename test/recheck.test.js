@@ -38,18 +38,18 @@ test('recheck reopens a done ticket that a later change broke, and done closes i
   const R2 = breakCoupon(repo);
   const calls = repo.kaneCalls().length;
 
-  // Requirement 5.1 and 5.2: the replay fails, one fresh run confirms it, and only then does T-1 reopen.
+  // Requirement 5.1 and 5.2: Kane fails, a second fresh run confirms it, and only then does T-1 reopen.
   let r = await repo.run(['recheck'], { scenario: ['replay-fail', 'red'] });
   assert.equal(r.code, 1, r.stdout + r.stderr);
-  both(r, /^T-1: the replay failed at step 2 \(Apply SAVE10\)\. Confirming with one fresh run that authors every step again\.$/m);
-  both(r, new RegExp(`^T-1 reopened at ${R2.slice(0, 7)}: Kane failed step 2 \\(Apply SAVE10\\) on a fresh run too\\.$`, 'm'));
+  both(r, /^T-1: Kane failed step 2 \(Apply SAVE10\)\. Confirming with a second fresh run before anything changes\.$/m);
+  both(r, new RegExp(`^T-1 reopened at ${R2.slice(0, 7)}: Kane failed step 2 \\(Apply SAVE10\\) on the second run too\\.$`, 'm'));
   both(r, /^Kane says: The cart accepts SAVE10, but applying it leaves the total at \$20\.00 instead of \$18\.00\.$/m);
   both(r, /^The agent fixes the app and runs proven done T-1\. Fix the app, not the test\.$/m);
   both(r, /^Reopened: T-1\.$/m);
   const [replay, confirm] = repo.kaneCalls().slice(calls);
   assert.deepEqual(replay.extra_args, ['--no-adaptive-heal']);
-  assert.equal(replay.recording_before, true, 'the replay used the local recording');
-  assert.deepEqual(confirm.extra_args, ['--author']);
+  assert.deepEqual(confirm.extra_args, []);
+  for (const call of [replay, confirm]) assert.equal(call.recording_before, false, 'Kane never sees a local recording');
   assert.equal(repo.kaneCalls().length, calls + 2);
 
   // The reopen is a state commit of its own, right on the commit Kane judged.
@@ -119,7 +119,7 @@ test('recheck reopens a done ticket that a later change broke, and done closes i
   const before = repo.head();
   r = await repo.run(['recheck'], { scenario: 'green' });
   assert.equal(r.code, 0, r.stdout);
-  both(r, /^T-1 still passes: Kane replayed its frozen test on [0-9a-f]{7}\.$/m);
+  both(r, /^T-1 still passes: Kane ran its frozen test fresh on [0-9a-f]{7}\.$/m);
   both(r, /^Every done ticket still passes\.$/m);
   assert.equal(repo.head(), before);
 
@@ -127,7 +127,7 @@ test('recheck reopens a done ticket that a later change broke, and done closes i
   assert.equal(repo.realKaneCalled(), false);
 });
 
-test('recheck changes nothing when the replay passes, when a fresh run passes, or when Kane does not run', async (t) => {
+test('recheck changes nothing when Kane passes, when a second run passes, or when Kane does not run', async (t) => {
   const repo = await greenRepo(t);
   breakCoupon(repo);
   const head = repo.head();
@@ -136,22 +136,22 @@ test('recheck changes nothing when the replay passes, when a fresh run passes, o
   let r = await repo.run(['recheck'], { scenario: 'green' });
   assert.equal(r.code, 0);
   both(r, /^T-1 still passes/m);
-  assert.equal(repo.kaneCalls().length, calls + 1, 'no fresh run after a passing replay');
+  assert.equal(repo.kaneCalls().length, calls + 1, 'no second run after a pass');
 
   calls = repo.kaneCalls().length;
   r = await repo.run(['recheck'], { scenario: ['replay-fail', 'green'] });
   assert.equal(r.code, 0);
-  both(r, /^T-1 stays done: the replay missed, but a fresh run passed every step, so nothing broke\.$/m);
+  both(r, /^T-1 stays done: the first run failed, but the second passed every step, so Kane does not confirm a break\.$/m);
   assert.equal(repo.kaneCalls().length, calls + 2);
 
   r = await repo.run(['recheck'], { scenario: ['replay-fail', 'not-started'] });
   assert.equal(r.code, 2);
-  both(r, /^T-1: the fresh run did not run: Kane did not start \(exit code 2\)\. Kane said: Not signed in\. Run kane-cli login first\. Nothing changed\. Run proven recheck again\.$/m);
+  both(r, /^T-1: the second run did not run: Kane did not start \(exit code 2\)\. Kane said: Not signed in\. Run kane-cli login first\. Nothing changed\. Run proven recheck again\.$/m);
 
   calls = repo.kaneCalls().length;
   r = await repo.run(['recheck'], { scenario: 'env-down' });
   assert.equal(r.code, 2);
-  both(r, /^T-1: the replay did not run: Kane says step 2 failed because of the environment, not the app/m);
+  both(r, /^T-1: Kane did not run: Kane says step 2 failed because of the environment, not the app/m);
   assert.equal(repo.kaneCalls().length, calls + 1);
 
   assert.equal(repo.head(), head);

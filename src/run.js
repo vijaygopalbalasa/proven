@@ -1,4 +1,5 @@
-import { lstatSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, lstatSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { classifyRun } from './classify.js';
 import { Refusal } from './errors.js';
@@ -49,6 +50,40 @@ function markActive(root, id, label) {
   return () => rmSync(file, { force: true });
 }
 
+// Kane replays the steps it recorded in tickets/output-T-N/, next to the test. That folder is never committed and
+// anyone with a shell can edit it, so it must never decide a verdict. For every run Proven moves it out of the
+// repository, so Kane authors every step from the frozen test, and afterwards puts it back exactly as it was (or
+// removes the one Kane wrote, if there was none). Kane's output from the run stays in .proven/runs/ and .testmuai/.
+export function recordingDir(id) {
+  return `tickets/output-${id}`;
+}
+
+function present(path) {
+  try {
+    lstatSync(path);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export function setRecordingAside(root, id) {
+  const dir = join(root, recordingDir(id));
+  let aside = null;
+  if (present(dir)) {
+    aside = mkdtempSync(join(tmpdir(), 'proven-recording-'));
+    cpSync(dir, join(aside, 'recording'), { recursive: true, verbatimSymlinks: true });
+    rmSync(dir, { recursive: true, force: true });
+  }
+  return () => {
+    rmSync(dir, { recursive: true, force: true });
+    if (aside) {
+      cpSync(join(aside, 'recording'), dir, { recursive: true, verbatimSymlinks: true });
+      rmSync(aside, { recursive: true, force: true });
+    }
+  };
+}
+
 const notRun = (reason) => ({ outcome: 'did-not-run', reason, exact: [] });
 
 export function announceKane(out, kane) {
@@ -77,19 +112,25 @@ export async function runKaneOnTree(ctx, { id, label, steps, startUrl, kane, tre
     out.progress(`Serving ${what} as tree ${short(tree)} at ${startUrl}`);
     const flags = extraArgs.length ? ` with ${extraArgs.join(' ')}` : '';
     out.progress(`Running Kane on ${p.test} (${steps.length} steps)${flags}. This takes about a minute.`);
-    const result = await runKane({
-      command: kane.command,
-      args: ['testmd', 'run', p.test, '--agent', '--headless', ...extraArgs],
-      cwd: root,
-      timeoutMs: timeoutS * 1000,
-      onEvent: (e) => {
-        if (e.type === 'test_md_step_end') {
-          const title = steps[e.step_index - 1]?.title ?? '';
-          const secs = e.duration_s != null ? ` (${e.duration_s} s)` : '';
-          out.progress(`  step ${e.step_index} ${title}: ${e.status}${secs}`);
-        }
-      },
-    });
+    const putBack = setRecordingAside(root, id);
+    let result;
+    try {
+      result = await runKane({
+        command: kane.command,
+        args: ['testmd', 'run', p.test, '--agent', '--headless', ...extraArgs],
+        cwd: root,
+        timeoutMs: timeoutS * 1000,
+        onEvent: (e) => {
+          if (e.type === 'test_md_step_end') {
+            const title = steps[e.step_index - 1]?.title ?? '';
+            const secs = e.duration_s != null ? ` (${e.duration_s} s)` : '';
+            out.progress(`  step ${e.step_index} ${title}: ${e.status}${secs}`);
+          }
+        },
+      });
+    } finally {
+      putBack();
+    }
     saveRaw(root, id, label, result.raw);
 
     const verdict = classifyRun({ ...result, steps, timeoutS, command: kane.command });

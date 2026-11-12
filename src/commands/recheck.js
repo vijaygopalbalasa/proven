@@ -48,8 +48,9 @@ function failureRecord(run, words) {
   };
 }
 
-// Requirement 5: replay one done ticket's frozen test with the app as committed at HEAD. A failed replay is confirmed
-// by one fresh run that authors every step again, and only a confirmed failure reopens the ticket.
+// Requirement 5: run one done ticket's frozen test with the app as committed at HEAD, with --no-adaptive-heal. Like
+// every Proven run, Kane's local recording is moved aside, so Kane authors every step fresh and an edited recording
+// cannot say "still passes". A failure is confirmed by a second fresh run, and only a confirmed failure reopens it.
 async function recheckOne(ctx, { id, lock, state }, kane) {
   const { root, config, out } = ctx;
   const p = ticketPaths(id);
@@ -71,26 +72,26 @@ async function recheckOne(ctx, { id, lock, state }, kane) {
   const run = (label, extraArgs) =>
     runKaneOnTree(ctx, { id, label, steps, startUrl, kane, tree, timeoutS: config.timeoutS, extraArgs, what: `${config.app} at ${short(H)}` });
 
-  out.progress(`${id}: replaying ${p.test} on ${short(H)}, where a replay miss fails instead of healing.`);
+  out.progress(`${id}: running ${p.test} fresh on ${short(H)}.`);
   const replay = await run('recheck-replay', ['--no-adaptive-heal']);
   if (replay.outcome === 'passed') {
-    out.both(`${id} still passes: Kane replayed its frozen test on ${short(H)}.`);
+    out.both(`${id} still passes: Kane ran its frozen test fresh on ${short(H)}.`);
     return 'passed';
   }
   if (replay.outcome === 'did-not-run') {
-    out.both(`${id}: the replay did not run: ${whyNotRun(replay)}. Nothing changed.`);
+    out.both(`${id}: Kane did not run: ${whyNotRun(replay)}. Nothing changed.`);
     return 'not-run';
   }
   const replayWords = kaneWords(replay);
-  out.both(`${id}: the replay failed at step ${replay.failedStep} (${replay.failedTitle}). Confirming with one fresh run that authors every step again.`);
+  out.both(`${id}: Kane failed step ${replay.failedStep} (${replay.failedTitle}). Confirming with a second fresh run before anything changes.`);
 
-  const confirm = await run('recheck-confirm', ['--author']);
+  const confirm = await run('recheck-confirm', []);
   if (confirm.outcome === 'did-not-run') {
-    out.both(`${id}: the fresh run did not run: ${whyNotRun(confirm)}. Nothing changed. Run proven recheck again.`);
+    out.both(`${id}: the second run did not run: ${whyNotRun(confirm)}. Nothing changed. Run proven recheck again.`);
     return 'not-run';
   }
   if (confirm.outcome === 'passed') {
-    out.both(`${id} stays done: the replay missed, but a fresh run passed every step, so nothing broke.`);
+    out.both(`${id} stays done: the first run failed, but the second passed every step, so Kane does not confirm a break.`);
     return 'passed';
   }
   if (confirm.headBefore !== H || head(root) !== H) {
@@ -140,7 +141,7 @@ async function recheckOne(ctx, { id, lock, state }, kane) {
   const c = commitPaths(root, { paths: [p.state], message: `${id}: reopened at ${short(H)}, step ${confirm.failedStep} failed` });
   assertOnlyPaths(root, c.commit, [p.state]);
   const lines = [
-    `${id} reopened at ${short(H)}: Kane failed step ${confirm.failedStep} (${confirm.failedTitle}) on a fresh run too.`,
+    `${id} reopened at ${short(H)}: Kane failed step ${confirm.failedStep} (${confirm.failedTitle}) on the second run too.`,
     `Kane says: ${words.oneLiner || '(no one-line summary)'}`,
     `Reason: ${words.reason || '(no reason given)'}`,
     `The agent fixes the app and runs proven done ${id}. Fix the app, not the test.`,

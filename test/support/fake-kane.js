@@ -48,12 +48,7 @@ if (
 }
 // FAKE_KANE_SCENARIO is one scenario, or a comma-separated list for commands that run Kane more than once:
 // run n takes the n-th entry (the last one repeats), counted in the FAKE_KANE_COUNTER file.
-const scenarioName = pickScenario(process.env.FAKE_KANE_SCENARIO ?? '');
-const scenario = SCENARIOS[scenarioName];
-if (!scenario) {
-  process.stderr.write(`fake kane: set FAKE_KANE_SCENARIO to one of ${Object.keys(SCENARIOS).join(', ')}\n`);
-  process.exit(2);
-}
+let scenarioName = pickScenario(process.env.FAKE_KANE_SCENARIO ?? '');
 
 function pickScenario(value) {
   const list = value.split(',').map((x) => x.trim()).filter(Boolean);
@@ -73,6 +68,9 @@ const testText = readFileSync(testPath, 'utf8');
 const stem = basename(testPath).replace(/_test\.md$/, '');
 // Kane replays the steps it has recorded in output-<stem>/ next to the test, and authors the rest.
 const recordingBefore = existsSync(join(dirname(testPath), `output-${stem}`, 'Result.md'));
+// FAKE_KANE_RECORDING_PASSES stands for a tampered recording: whenever one is there, the run replays it and passes.
+if (recordingBefore && process.env.FAKE_KANE_RECORDING_PASSES) scenarioName = 'green';
+const scenario = SCENARIOS[scenarioName];
 const steps = [];
 for (const line of testText.split('\n')) {
   const h = /^##\s+(.*\S)\s*$/.exec(line);
@@ -80,6 +78,10 @@ for (const line of testText.split('\n')) {
   else if (steps.length && line.trim()) steps.at(-1).lines.push(line.trim());
 }
 const startUrl = /^Open\s+(\S+)/m.exec(testText)?.[1] ?? 'http://127.0.0.1:1/';
+if (!scenario) {
+  process.stderr.write(`fake kane: set FAKE_KANE_SCENARIO to one of ${Object.keys(SCENARIOS).join(', ')}\n`);
+  process.exit(2);
+}
 
 const sessionId = randomUUID();
 const evidenceId = randomUUID();
