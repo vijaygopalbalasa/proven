@@ -1,6 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { loadConfig } from '../src/config.js';
 import { parseTestSteps, parseTicket, renderTest, renderTicketTemplate, startUrlOf, ticketProblems, checkId } from '../src/ticket.js';
+import { ROOT } from './support/helpers.js';
 
 const good = `# T-1: Coupon SAVE10 takes 10% off
 
@@ -84,6 +88,17 @@ Verify shipping still shows $5.00.
   const steps = parseTestSteps(text);
   assert.deepEqual(steps.map((s) => s.title), ['Open the start page', 'Apply SAVE10', 'Keep shipping']);
   assert.equal(startUrlOf(steps), 'http://localhost:8091/');
+});
+
+test('the demo tickets and the demo config are ready for the live gate', () => {
+  assert.deepEqual(loadConfig(ROOT), { app: 'demo/app', timeoutS: 300, maxAttempts: 4 });
+  for (const id of ['T-1', 'T-2']) {
+    const t = parseTicket(readFileSync(join(ROOT, 'tickets', `${id}.md`), 'utf8'), id);
+    assert.deepEqual(ticketProblems(t), { missing: [], problems: [] }, id);
+    assert.equal(t.url, 'http://localhost:8091/');
+    assert.equal(t.landmark, 'Your cart');
+    assert.equal(parseTestSteps(renderTest(t)).length, 2, id);
+  }
 });
 
 test('ticket ids look like T-1', () => {

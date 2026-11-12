@@ -13,8 +13,9 @@ export async function cmdNew({ root, out }, [id, title], flags) {
   if (existsSync(file)) throw new Refusal(`${p.ticket} already exists.`);
   mkdirSync(join(root, 'tickets'), { recursive: true });
   writeFileSync(file, renderTicketTemplate({ id, title: title.trim(), url: flags.url ?? '', landmark: flags.landmark ?? '' }));
+  const todo = [!flags.url && 'the start URL', !flags.landmark && 'the landmark', 'the acceptance criteria'].filter(Boolean);
   out.say(`Created ${p.ticket}.`);
-  out.say('Fill in the start URL, the landmark and the acceptance criteria, each ending in a Verify line.');
+  out.say(`Fill in ${todo.join(', ').replace(/, ([^,]*)$/, ' and $1')}. Each criterion ends in a Verify line.`);
   out.say(`Then run: proven freeze ${id}`);
   return 0;
 }
