@@ -1,0 +1,44 @@
+{
+  "receipt": 1,
+  "ticket": "T-1",
+  "title": "Coupon SAVE10 takes 10% off",
+  "settings": {
+    "app": "demo/app",
+    "timeout_s": 300,
+    "max_attempts": 4,
+    "start_url": "http://localhost:8091/"
+  },
+  "frozen": {
+    "commit": "75b602402eecb37c05e9f68789b5de9518b3faac",
+    "test": "tickets/T-1_test.md",
+    "test_sha256": "881a05071de57def25a84d3b85ef6e184f568d44027881d6d43075c46ad87506",
+    "ticket": "tickets/T-1.md",
+    "ticket_sha256": "b2ed80ef27ff8339afc1b921675ee530d6acf91341166d267fb3be5cd5bc9b8b"
+  },
+  "red": {
+    "commit": "0c82fa03fb8ab4766957eedeb25c5e963db9aabd",
+    "failed_step": 2,
+    "failed_step_title": "Apply SAVE10",
+    "kane_one_liner": "The test expected SAVE10 to reduce the total, but the store rejected that code and kept the total at $30.00.",
+    "kane_reason": "SAVE10 was applied but the cart reports “That code is not valid” and retains a $30.00 total.",
+    "evidence_sha256": "839a52e7267c62569d91918cbea114153465894d5dbc9c0564d2c3bce4e50b43",
+    "kane": "kane-cli",
+    "kane_cli": "0.10.4",
+    "duration_s": 57,
+    "credits": 29.37,
+    "app_tree": "d6006651d796bfe735335813f75458b11576b534"
+  },
+  "green": {
+    "commit": "f5e792caa8ccd97036115b96a0ebf6441c3caa6f",
+    "steps_passed": 2,
+    "steps_total": 2,
+    "evidence_sha256": "e3b6820ba82e8a7f36e6e529166f8e67c44349c375e5e2c67451db5b383ce84b",
+    "kane": "kane-cli",
+    "kane_cli": "0.10.4",
+    "duration_s": 28,
+    "credits": 11.99,
+    "failed_attempts": 0,
+    "app_tree": "09bd568df3ca32341c2994f1fce35f5c3b50e442"
+  },
+  "receipt_sha256": "54cb62babf0240d7f50ba0dd9b5bc6597ef5afa08d4b39afc706edd292bbc574"
+}
