@@ -1,0 +1,212 @@
+#!/usr/bin/env node
+// A stand-in for Kane CLI, used only by the tests. It replays NDJSON recorded from real Kane CLI 0.10.4 runs
+// (scrubbed: every private value is a {{PLACEHOLDER}}) with Kane's exit codes, and writes what Kane writes:
+// the recording folder next to the test and a sealed evidence pack under .testmuai/evidence/.
+// Private-looking values (home path, session ids, share links, the runner's email) are made up at run time,
+// so the tests can prove Proven never commits them.
+import { spawn } from 'node:child_process';
+import { createHash, randomBytes, randomUUID } from 'node:crypto';
+import { appendFileSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { basename, dirname, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { writeZip } from './zip-writer.js';
+
+const FIXTURES = join(dirname(fileURLToPath(import.meta.url)), '..', 'fixtures', 'kane');
+const AFTER_RUN = ['test_md_summary', 'coverage', 'test_md_done'];
+
+const SCENARIOS = {
+  red: { fixture: 'red', exit: 1 },
+  green: { fixture: 'green', exit: 0 },
+  'replay-fail': { fixture: 'replay-fail', exit: 1 },
+  'env-down': { fixture: 'env-down', exit: 1 },
+  'landmark-down': { fixture: 'landmark-down', exit: 1 },
+  'no-done': { fixture: 'red', exit: 1, drop: AFTER_RUN },
+  'exit-3': { fixture: 'red', exit: 3, drop: AFTER_RUN },
+  'exit-mismatch': { fixture: 'green', exit: 1 },
+  'not-started': { fixture: null, exit: 2, stderr: 'Not signed in. Run kane-cli login first.' },
+  'green-changes-app': { fixture: 'green', exit: 0, touch: true },
+  'red-leaky': { fixture: 'red', exit: 1, leaky: true },
+  hang: { hang: true },
+};
+
+const args = process.argv.slice(2);
+const scenarioName = process.env.FAKE_KANE_SCENARIO;
+const scenario = SCENARIOS[scenarioName];
+if (args[0] !== 'testmd' || args[1] !== 'run' || !args[2]?.endsWith('_test.md') || !args.includes('--agent') || !args.includes('--headless')) {
+  process.stderr.write(`fake kane: unexpected arguments: ${args.join(' ')}\n`);
+  process.exit(2);
+}
+if (!scenario) {
+  process.stderr.write(`fake kane: set FAKE_KANE_SCENARIO to one of ${Object.keys(SCENARIOS).join(', ')}\n`);
+  process.exit(2);
+}
+
+const testPath = resolve(process.cwd(), args[2]);
+const testText = readFileSync(testPath, 'utf8');
+const stem = basename(testPath).replace(/_test\.md$/, '');
+const steps = [];
+for (const line of testText.split('\n')) {
+  const h = /^##\s+(.*\S)\s*$/.exec(line);
+  if (h && !line.startsWith('###')) steps.push({ title: h[1], lines: [] });
+  else if (steps.length && line.trim()) steps.at(-1).lines.push(line.trim());
+}
+const startUrl = /^Open\s+(\S+)/m.exec(testText)?.[1] ?? 'http://127.0.0.1:1/';
+
+const sessionId = randomUUID();
+const evidenceId = randomUUID();
+const home = join('/', 'Users', 'kane-runner');
+const sessionDir = join(home, '.testmuai', 'kaneai', 'sessions', sessionId);
+const shareUrl = ['https://tm.invalid', 'projects', 'P1', 'dashboard', 'share', `US_${randomBytes(12).toString('hex').toUpperCase()}?type=summary`].join('/');
+const email = ['kane.runner', 'example.com'].join('@');
+const values = {
+  SESSION_ID: sessionId,
+  SESSION_DIR: sessionDir,
+  SHARE_URL: shareUrl,
+  TEST_PATH: testPath,
+  TMP: join(tmpdir(), 'kane-fake'),
+  ORIGIN: new URL(startUrl).origin,
+  EVIDENCE_ID: evidenceId,
+  TESTCASE_ID: randomBytes(13).toString('hex').toUpperCase(),
+};
+
+if (process.env.FAKE_KANE_LOG) {
+  appendFileSync(
+    process.env.FAKE_KANE_LOG,
+    JSON.stringify({ scenario: scenarioName, args, session_id: sessionId, share_url: shareUrl, session_dir: sessionDir, evidence_id: evidenceId, email }) + '\n',
+  );
+}
+
+const out = (event) => process.stdout.write(JSON.stringify(event) + '\n');
+
+if (scenario.hang) {
+  out({ type: 'stream_start', cli_version: '0.10.4', surface: 'testmd', pid: process.pid, v: 1 });
+  const child = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { stdio: 'inherit' });
+  if (process.env.FAKE_KANE_PIDFILE) writeFileSync(process.env.FAKE_KANE_PIDFILE, String(child.pid));
+  setInterval(() => {}, 1000);
+} else {
+  play();
+}
+
+function fill(text) {
+  return text.replace(/\{\{([A-Z_]+)\}\}/g, (m, key) => values[key] ?? m);
+}
+
+function play() {
+  if (!scenario.fixture) {
+    out({ type: 'stream_start', cli_version: '0.10.4', surface: 'testmd', pid: process.pid, v: 1 });
+    process.stderr.write(`${scenario.stderr}\n`);
+    process.exitCode = scenario.exit;
+    return;
+  }
+  const events = fill(readFileSync(join(FIXTURES, `${scenario.fixture}.ndjson`), 'utf8'))
+    .split('\n')
+    .filter(Boolean)
+    .map((l) => JSON.parse(l))
+    .filter((e) => !(scenario.drop ?? []).includes(e.type));
+
+  const statuses = new Map();
+  for (const e of events) if (e.type === 'test_md_step_end') statuses.set(e.step_index, e.status);
+  const failedStep = [...statuses].find(([, s]) => s === 'failed')?.[0] ?? null;
+  const overall = events.find((e) => e.type === 'test_md_done')?.overall_status ?? (failedStep ? 'failed' : 'passed');
+
+  if (scenario.leaky && failedStep) {
+    let current = null;
+    for (const e of events) {
+      if (e.type === 'test_md_step_start') current = e.step_index;
+      if (e.type === 'run_end' && current === failedStep && e.status === 'failed') {
+        e.one_liner = `${e.one_liner} Details: ${shareUrl}`;
+        e.reason = `${e.reason} (log at ${sessionDir}/runs/1, signed in as ${email})`;
+      }
+    }
+  }
+
+  let wroteRecording = false;
+  let touched = false;
+  for (const e of events) {
+    if (e.type === 'test_md_step_start' && steps[e.step_index - 1]) e.heading = steps[e.step_index - 1].title;
+    if (e.type === 'test_md_evidence_ingest') writePack(failedStep);
+    if ((e.type === 'test_md_bundle_sync' || e.type === 'test_md_summary') && !wroteRecording) {
+      writeRecording(statuses, overall);
+      wroteRecording = true;
+    }
+    out(e);
+    if (scenario.touch && !touched && e.type === 'test_md_step_end' && process.env.FAKE_KANE_TOUCH) {
+      writeFileSync(process.env.FAKE_KANE_TOUCH, 'changed while Kane ran\n');
+      touched = true;
+    }
+  }
+  if (!wroteRecording) writeRecording(statuses, overall);
+  process.stderr.write(`Evidence pack: ${join(process.cwd(), '.testmuai', 'evidence', `${evidenceId}.evidence`)}\n`);
+  process.exitCode = scenario.exit;
+}
+
+function writePack(failedStep) {
+  const testDir = `tests/${stem}-0a1b2c3d`;
+  const jpeg = (label) => Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.from(`fake screenshot ${label} `.repeat(20))]);
+  const entries = [
+    { name: 'run.yaml', data: `evidence: '0.1'\nrun_id: ${evidenceId}\nstatus: finalized\nrunner:\n  name: Kane Runner\n  email: ${email}\n` },
+    { name: `${testDir}/steps/1-0-1/screenshot.jpg`, data: jpeg('step 1'), deflate: true },
+  ];
+  if (failedStep) {
+    const dir = `steps/6-${failedStep - 1}-5`;
+    entries.push(
+      {
+        name: 'failure.yaml',
+        data: `generated: 2026-11-12T15:52:22.705Z\ntotals:\n  failures: 1\nfailures:\n  - test: ${stem}-0a1b2c3d\n    ordinal: 6\n    step: ${failedStep - 1}-5\n    status: failed\n    path: ${testDir}/${dir}/failure.yaml\n`,
+      },
+      { name: `${testDir}/${dir}/failure.yaml`, data: `step: ${failedStep - 1}-5\nstatus: failed\npage_state:\n  url: ${startUrl}\n  screenshot: ${dir}/screenshot.jpg\n` },
+      { name: `${testDir}/steps/5-${failedStep - 1}-4/screenshot.jpg`, data: jpeg('before failure'), deflate: true },
+      { name: `${testDir}/${dir}/screenshot.jpg`, data: jpeg(`step ${failedStep}`), deflate: true },
+    );
+  } else {
+    entries.push({ name: 'failure.yaml', data: 'generated: 2026-11-12T15:55:54.099Z\ntotals:\n  failures: 0\nfailures: []\n' });
+  }
+  const folder = join(process.cwd(), '.testmuai', 'evidence');
+  mkdirSync(folder, { recursive: true });
+  writeFileSync(join(folder, `${evidenceId}.evidence`), writeZip(entries));
+}
+
+function writeRecording(statuses, overall) {
+  const dir = join(dirname(testPath), `output-${stem}`);
+  rmSync(dir, { recursive: true, force: true });
+  mkdirSync(join(dir, '.internal'), { recursive: true });
+  const mark = { passed: 'passed', failed: 'failed', skipped: 'skipped' };
+  const lines = [
+    '---',
+    `test: ../${basename(testPath)}`,
+    `status: ${overall}`,
+    'started: 2026-11-12T15:51:26.465Z',
+    'duration_s: 54',
+    `session_id: ${sessionId}`,
+    '---',
+    '',
+    `# ${/^#\s+(.*)$/m.exec(testText)?.[1] ?? stem} - Result`,
+  ];
+  steps.forEach((s, i) => {
+    const md5 = createHash('md5').update(s.lines.join('\n')).digest('hex');
+    const status = statuses.get(i + 1) ?? 'skipped';
+    lines.push('', `## ${s.title} ${mark[status] ?? status}`, `md5: ${md5}`, ...s.lines);
+    const flow = join(dir, '.internal', 'steps', `${i + 1}-${md5.slice(0, 8)}`, 'flows', '0');
+    mkdirSync(flow, { recursive: true });
+    const action = status === 'passed' ? JSON.stringify({ step: 1, action_type: 'navigate', action_instruction: s.lines[0] ?? '' }) + '\n' : '';
+    writeFileSync(join(flow, 'actions.ndjson'), action);
+  });
+  writeFileSync(join(dir, 'Result.md'), lines.join('\n') + '\n');
+  writeFileSync(
+    join(dir, '.internal', 'meta.json'),
+    JSON.stringify(
+      {
+        test_id: '00000000-0000-4000-8000-0000000000aa',
+        project_id: 'FAKEPROJECT',
+        session_name: stem,
+        commit_id: sessionId,
+        testcase_id: values.TESTCASE_ID,
+        executions: [{ execution_id: evidenceId, run_kind: 'author', status: overall, valid: true }],
+      },
+      null,
+      2,
+    ) + '\n',
+  );
+  writeFileSync(join(dir, '.internal', 'execution.json'), JSON.stringify({ session_id: sessionId, commit_id: sessionId, url: startUrl, status: overall }, null, 2) + '\n');
+}
