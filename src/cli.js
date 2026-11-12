@@ -7,6 +7,7 @@ import { cmdRed } from './commands/red.js';
 import { cmdDone } from './commands/done.js';
 import { cmdVerify } from './commands/verify.js';
 import { cmdRecheck } from './commands/recheck.js';
+import { cmdInit } from './commands/init.js';
 
 export const USAGE = `proven: a ticket closes only when Kane CLI saw it fail before the change and pass after it.
 
@@ -18,13 +19,14 @@ export const USAGE = `proven: a ticket closes only when Kane CLI saw it fail bef
   proven verify receipts/T-N.json --replay
                                      and run Kane again with the app at red (must fail) and at green (must pass)
   proven recheck [T-N ...]           replay every done ticket; reopen one whose failure a fresh run confirms
+  proven init                        write Claude Code guard rails: a PreToolUse hook and a CLAUDE.md section
 
 Kane is always kane-cli from PATH. Settings live in .proven/config.json (app, timeout_s, max_attempts)
 and are pinned when a ticket is frozen.
 Exit codes for red and done: 0 ok, 1 Kane failed (or already passes at red), 2 did not run.
 Exit codes for recheck: 0 all still pass, 1 a ticket reopened, 2 something did not run.`;
 
-const COMMANDS = { new: cmdNew, freeze: cmdFreeze, red: cmdRed, done: cmdDone, verify: cmdVerify, recheck: cmdRecheck };
+const COMMANDS = { new: cmdNew, freeze: cmdFreeze, red: cmdRed, done: cmdDone, verify: cmdVerify, recheck: cmdRecheck, init: cmdInit };
 const VALUE_FLAGS = new Set(['url', 'landmark']);
 
 export function parseArgs(argv) {
