@@ -21,6 +21,15 @@ process.stdout.write('this line is not json\n');
 
 if (process.env.FAKE_AGENT_MODE === 'quit') process.exit(Number(process.env.FAKE_AGENT_EXIT ?? 3));
 
+// Tamper modes: the agent edits Proven's own judge, or hides an extra commit touching src/, then runs done.
+if (process.env.FAKE_AGENT_MODE === 'tamper-src' || process.env.FAKE_AGENT_MODE === 'commit-src') {
+  const judge = 'src/commands/done.js';
+  writeFileSync(judge, readFileSync(judge, 'utf8') + '// always pass\n');
+  if (process.env.FAKE_AGENT_MODE === 'commit-src') {
+    spawnSync('git', ['commit', '-q', '-am', `${id}: attempt 1 failed at step 2`], { encoding: 'utf8' });
+  }
+}
+
 const tries = Number(process.env.FAKE_AGENT_TRIES ?? 6);
 for (let n = 1; n <= tries; n++) {
   const file = 'demo/app/styles.css';

@@ -25,6 +25,10 @@ async function redRepo(t, { agent = [process.execPath, FAKE_AGENT, '--output-for
       repo.git('commit', '-q', '-m', 'Say which agent to run');
     }
   }
+  // Proven's own code, as a person would have committed it, for the tests that tamper with it.
+  repo.write('src/commands/done.js', '// the judge\n');
+  repo.git('add', 'src');
+  repo.git('commit', '-q', '-m', 'Add the judge');
   assert.equal((await repo.run(['freeze', 'T-1'])).code, 0);
   const r = await repo.run(['red', 'T-1'], { scenario: 'red' });
   assert.equal(r.code, 0, r.stderr);
@@ -201,4 +205,44 @@ test('guard: proven loop is a person\'s step, however it is run', async () => {
   }
   assert.equal(decide({ tool_name: 'Bash', tool_input: { command: 'node bin/proven.js done T-1' }, cwd: dir }, { projectDir: dir }), null);
   assert.equal(decide({ tool_name: 'Bash', tool_input: { command: 'grep -rn "proven loop" README.md' }, cwd: dir }, { projectDir: dir }), null);
+});
+
+for (const mode of ['tamper-src', 'commit-src']) {
+  test(`loop: ${mode}: the agent changes Proven's own code, so nothing from the session is trusted and the loop stops`, async (t) => {
+    const repo = await redRepo(t);
+    const r = await repo.run(['loop'], { scenario: ['green', 'green', 'green'], env: agentEnv(repo, { FAKE_AGENT_MODE: mode }) });
+    assert.equal(r.code, 1, r.stdout + r.stderr);
+    const text = r.stdout + '\n' + r.stderr;
+    assert.match(text, /^Proven's own files changed during the agent's session: .*src\/commands\/done\.js.*\. Nothing from this session is trusted\.$/m);
+    assert.doesNotMatch(text, /is done: receipt verifies|Rechecking|Loop finished|Handing back/);
+    assert.equal(agentCalls(repo).length, 1);
+  });
+}
+
+test('loop: a person\'s uncommitted change to Proven\'s code stops the loop before any agent starts', async (t) => {
+  const repo = await redRepo(t);
+  repo.write('src/commands/done.js', '// edited by hand\n');
+  const r = await repo.run(['loop'], { scenario: 'red', env: agentEnv(repo) });
+  assert.equal(r.code, 2, r.stdout + r.stderr);
+  assert.match(r.stdout + r.stderr, /did not run: .*src\/commands\/done\.js.*uncommitted/);
+  assert.equal(agentCalls(repo).length, 0);
+});
+
+test('guard: Proven\'s own files are protected like tickets and receipts, the app folder is not', async () => {
+  const dir = '/tmp/proven-guard-test';
+  const paths = ['bin/proven.js', 'src/commands/done.js', 'package.json', 'package-lock.json', 'node_modules/x/index.js', 'test/loop.test.js', 'docs/design.md', '.gitignore', 'README.md', 'CLAUDE.md'];
+  const call = (tool_name, tool_input) => decide({ tool_name, tool_input, cwd: dir }, { projectDir: dir });
+  for (const p of paths) {
+    for (const [tool, input] of [['Write', { file_path: join(dir, p), content: 'x' }], ['Edit', { file_path: p, old_string: 'a', new_string: 'b' }], ['MultiEdit', { file_path: join(dir, p), edits: [] }], ['NotebookEdit', { notebook_path: p, new_source: 'x' }]]) {
+      assert.match(call(tool, input) ?? '', /which the agent does not change/, `${tool} ${p}`);
+    }
+    for (const command of [`echo x > ${p}`, `sed -i s/a/b/ ${p}`, `cp /tmp/x ${p}`, `rm ${p}`, `tee ${p}`, `node -e "require('fs').writeFileSync('${p}', 'x')"`]) {
+      assert.match(call('Bash', { command }) ?? '', /Proven: /, command);
+    }
+    assert.equal(call('Bash', { command: `cat ${p}` }), null, `reading ${p} is fine`);
+  }
+  assert.match(call('Write', { file_path: join(dir, 'Src', 'x.js'), content: 'x' }) ?? '', /src\//i, 'case-insensitive');
+  assert.equal(call('Write', { file_path: join(dir, 'demo', 'app', 'cart.js'), content: 'x' }), null);
+  assert.equal(call('Bash', { command: 'sed -i s/a/b/ demo/app/cart.js' }), null);
+  assert.equal(call('Bash', { command: 'node bin/proven.js done T-1' }), null);
 });
