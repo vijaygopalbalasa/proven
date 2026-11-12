@@ -61,8 +61,7 @@ Exit codes for `red` and `done`: 0 ok, 1 Kane failed (or, at red, the test alrea
 
 ## Files
 
-`tickets/` holds tickets, frozen tests, locks and Kane's recordings (`output-T-N/`, which replays need).
-`receipts/` holds receipts. `.proven/state/` holds each ticket's red record and attempts. `.proven/config.json` holds
+`tickets/` holds tickets, frozen tests and locks. `receipts/` holds receipts. `.proven/state/` holds each ticket's red record and attempts. `.proven/config.json` holds
 the app folder, the time limit and the attempt limit, which are pinned when a ticket is frozen.
 
 ## Limits
@@ -76,7 +75,9 @@ the app folder, the time limit and the attempt limit, which are pinned when a ti
 - Kane's verdicts can be flaky. That is why red needs a passing landmark and a failing later step, and why anything
   unclear counts as "did not run".
 - Evidence packs are not committed, because they carry the runner's name and email. Proven keeps only their sha256.
-- Kane's recording folder is committed because replays need it. It holds Kane's own session and account ids.
+- Kane's recording folder (`tickets/output-T-N/`) stays local: it is gitignored, never committed and not part of any
+  receipt, because it carries Kane account and session ids. Replays on the same machine stay cheap; a fresh clone
+  records again.
 - Guard rails for the agent (Requirement 7) are not built yet.
 - The tests use a fake Kane through the `PROVEN_KANE_BIN` variable. Every run made that way says so in the output, the
   state and the receipt, and `verify` flags such a receipt.

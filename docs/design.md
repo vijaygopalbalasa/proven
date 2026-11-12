@@ -12,8 +12,8 @@ writes receipts. This document covers Requirements 1 to 4. Requirements 5 to 8 c
 | `tickets/T-N_test.md` | `proven freeze` | in F | Kane test: step 1 opens the start URL and checks the landmark, then one step per criterion |
 | `tickets/T-N.lock.json` | `proven freeze` | alone, right after F | sha256 of the test and the ticket, F, and the pinned settings with their sha256 |
 | `.proven/state/T-N.json` | `proven red`, `proven done` | alone (red, each failed attempt), with the receipt (green) | status, the red record, attempts, last failure |
-| `receipts/T-N.json` | `proven done` | with Kane's recording, right after G | the receipt |
-| `tickets/output-T-N/` | Kane | with the receipt | Kane's recording, which later replays need |
+| `receipts/T-N.json` | `proven done` | with the state, right after G | the receipt |
+| `tickets/output-T-N/` | Kane | never (gitignored) | Kane's recording: it carries Kane account and session ids, so it stays local for replays on this machine |
 | `.proven/config.json` | a person | yes | `app`, `timeout_s`, `max_attempts` (nothing else is allowed) |
 | `.proven/runs/` | Proven | never (gitignored) | raw Kane output and copies of failing screenshots, for the agent |
 | `.testmuai/` | Kane | never (gitignored) | evidence packs, which carry the runner's name and email |
@@ -69,7 +69,7 @@ Proven lists the changed paths and stops if any falls outside the allowed set.
 | red | state | `.proven/state/T-N.json` (red commit = HEAD before it) |
 | done, Kane failed | state | `.proven/state/T-N.json` (one commit per failed attempt) |
 | done, Kane passed | G | the app folder (G = HEAD if the app folder is already committed) |
-| done, Kane passed | receipt | `receipts/T-N.json`, `tickets/output-T-N/` (no `evidence/`, no `*.evidence`), `.proven/state/T-N.json` |
+| done, Kane passed | receipt | `receipts/T-N.json`, `.proven/state/T-N.json` |
 
 ## What Proven trusts
 
@@ -123,8 +123,8 @@ files under the app folder, and the start URL must be local with a port (for exa
 - **done** runs Kane on the agent's change. On a failure it prints the step, title, Kane's words, the failing
   screenshot inside the evidence pack (and a copy under `.proven/runs/`) and "Fix the app, not the test.", on stdout
   and stderr, exit 1. It counts one attempt, and the 4th failure means "needs a person". Did not run is exit 2 and
-  counts nothing. On a pass it commits the judged tree as G, then the receipt with Kane's recording, and prints
-  "Done: red <short>, green <short>.".
+  counts nothing. On a pass it commits the judged tree as G, then the receipt and the state, and prints
+  "Done: red <short>, green <short>.". Kane's recording is never committed.
 - **verify** uses git only. Paths come from the ticket id, never from the receipt. It checks:
   1. the receipt's paths match its ticket;
   2. the receipt hash matches its contents;
@@ -136,7 +136,7 @@ files under the app folder, and the start URL must be local with a port (for exa
   7. the test did not change between red and G;
   8. the app trees at red and G match the receipt, and differ;
   9. the state history shows the red record right after red, then one commit per failed attempt;
-  10. the receipt is committed as it is, with Kane's recording.
+  10. the receipt is committed as it is, after G.
 
   It prints CONFIRMED (exit 0) or MISMATCH with each failed check (exit 1). `--replay` (4.3) is a stub until it is
   built.
@@ -149,21 +149,18 @@ files under the app folder, and the start URL must be local with a port (for exa
   frozen:   { commit F, test, test_sha256, ticket, ticket_sha256 },
   red:      { commit, failed_step, failed_step_title, kane_one_liner, kane_reason, evidence_sha256, kane, kane_cli, duration_s, credits, app_tree },
   green:    { commit G, steps_passed, steps_total, evidence_sha256, kane, kane_cli, duration_s, credits, failed_attempts, app_tree },
-  recording:{ path, sha256 },
   receipt_sha256 }
 ```
 
-`receipt_sha256` is the sha256 of the canonical JSON (keys sorted, no spaces) of everything else. The recording
-sha256 is the sha256 of the canonical JSON of `[path, sha256 of file]` pairs, sorted by path. The app trees are git
-tree ids. No hash is made from joined strings.
+`receipt_sha256` is the sha256 of the canonical JSON (keys sorted, no spaces) of everything else. The app trees are
+git tree ids. No hash is made from joined strings. Kane's recording is not hashed, because it is never committed.
 
 ## Leak guards
 
-Proven's own files never hold a session id or folder, share URL, Test Manager link, absolute path, name or email.
-Kane's text is scrubbed before it is stored, and every JSON file Proven writes is checked before writing. Kane's
-recording folder is committed byte for byte, because Kane reads `.internal/meta.json` (its `commit_id`) on later
-runs. Before committing it, Proven refuses if it holds an email, a home path, a share URL or a Test Manager link. The
-recording does carry Kane's own session and account ids.
+No committed file holds a Kane session id or folder, a Kane account id, a share URL, a Test Manager link, an
+absolute path, a name or an email. Kane's text is scrubbed before it is stored, and every JSON file Proven writes is
+checked before writing. Kane's recording folder and evidence packs are gitignored, and Proven commits only explicit
+paths, so they are never committed even where the ignore rule is missing.
 
 ## Limits
 
@@ -178,4 +175,5 @@ through `PROVEN_KANE_BIN`) replays scrubbed NDJSON recorded from Kane CLI 0.10.4
 Kane, it writes the recording folder and an evidence pack, fetches pages from the app Proven serves, and it can hang,
 crash, leak private text or change the app mid-run. The end-to-end tests drive the whole loop in temporary git repos against the real demo server. A `kane-cli`
 shim placed first on PATH fails loudly if anything reaches for the real CLI. Leak tests scan every blob of every
-commit, and this repository itself, for emails, home paths, Kane session data and share links.
+commit, and this repository itself, for emails, home paths, Kane session and account ids and share links, with no
+exception for any folder.

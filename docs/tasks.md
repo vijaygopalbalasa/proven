@@ -20,7 +20,7 @@ Build order from the requirements: Requirements 1 to 4 first, then the gate, the
 - [x] 3.1 done checks the test, the app and runs Kane
 - [x] 3.2 a failure prints step, title, one_liner, reason, screenshot path and "Fix the app, not the test." (exit 1), and 4 failures mean "needs a person"
 - [x] 3.3 did not run exits 2 and counts no attempt
-- [x] 3.4 a pass commits G, then the receipt with Kane's recording, and prints "Done: red X, green Y."
+- [x] 3.4 a pass commits G, then the receipt, and prints "Done: red X, green Y." Kane's recording stays local
 - [x] 3.5 Proven commits only the app folder, `tickets/`, `receipts/` and `.proven/state/`
 - [x] 4.1 receipt fields and its own canonical sha256
 - [x] 4.2 `proven verify` prints CONFIRMED or MISMATCH with each failed check, git only

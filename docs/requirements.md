@@ -73,11 +73,13 @@ Kane passes and cannot close the ticket any other way.
 3. WHEN Kane did not run (as in 2.5) THE SYSTEM SHALL say so, exit with code 2, and count no attempt.
 4. WHEN Kane passes the test THE SYSTEM SHALL check that the red commit is an ancestor of HEAD and that the frozen test
    is byte-identical to the lock, commit the app folder's changes (commit G, the code Kane just judged), then write
-   `receipts/T-N.json` naming G and commit it with Kane's recording folder for the test, mark the ticket done, print
-   "Done: red <short sha>, green <short sha>." and exit with code 0.
-5. THE SYSTEM SHALL never commit files outside the app folder, `tickets/` (including Kane's `output-<stem>/` recording,
-   which replays need), `receipts/` and `.proven/state/`, and SHALL never commit Kane's session folders or evidence
-   packs.
+   `receipts/T-N.json` naming G and commit it, mark the ticket done, print "Done: red <short sha>, green <short sha>."
+   and exit with code 0. Kane's recording folder for the test (`tickets/output-<stem>/`) stays local and is not
+   committed, because it carries Kane account and session ids and the repository is public.
+5. THE SYSTEM SHALL never commit files outside the app folder, `tickets/`, `receipts/` and `.proven/state/`, and SHALL
+   never commit Kane's recording folders (`output-<stem>/`), session folders or evidence packs. Recordings carry Kane
+   account and session ids, so they stay on disk only: replays on the same machine stay cheap, and a fresh clone
+   records again.
 
 ## Requirement 4: Receipts anyone can re-check
 **User story:** As anyone reading the repository, I want to re-check a closed ticket without trusting the agent or the
@@ -85,8 +87,8 @@ author.
 ### Acceptance criteria
 1. THE receipt SHALL record the ticket id and title, the frozen test's sha256 and its commit F, the red run (commit,
    failing step, Kane's reason, evidence sha256, Kane CLI version), the green run (commit G, steps passed, evidence
-   sha256, Kane CLI version), the sha256 of Kane's recording folder at green, and its own sha256 over a canonical JSON
-   of everything else.
+   sha256, Kane CLI version), and its own sha256 over a canonical JSON of everything else. It SHALL NOT hash Kane's
+   recording, which stays local because it carries Kane account and session ids.
 2. WHEN anyone runs `proven verify receipts/T-N.json` THE SYSTEM SHALL check, with git and no network, the receipt's own
    hash, that the frozen test at the lock commit matches the recorded sha256, that the red commit is an ancestor of the
    green commit, and that the frozen test did not change between them, and SHALL print CONFIRMED and exit 0, or
