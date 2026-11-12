@@ -49,14 +49,39 @@ node bin/proven.js verify receipts/T-1.json --replay   # git checks, then Kane a
 Proven serves the app itself while Kane runs, on the start URL's port (8091 here), so nothing else may listen there.
 `npm run demo` serves the shop for looking at it by hand; stop it before `red`, `done`, `recheck` or `--replay`.
 
+## One command: proven loop
+
+`proven loop [T-N ...]` is what the two `claude -p` calls above do, in one command. A person still writes, freezes and
+records red. After that, `proven loop` starts the coding agent for each ticket that is red, in progress or reopened (or
+for the tickets you name), one ticket and one agent session at a time, with exactly the two prompts shown above. The
+agent reads `proven done`'s output and tries again, so Kane's verdict reaches it with no person in between. When every
+ticket is done, it runs `proven recheck`, hands any ticket that reopens back to the agent, at most 2 such rounds, and
+ends with a recheck whose result it prints.
+
+While it runs it prints, naming the ticket on every line, each attempt as `proven done` records it (attempt number,
+Kane's verdict, the failing step and Kane's one-liner), and one short line per agent tool call (the tool and the file
+or command, about 100 characters at most, never file contents or tool results).
+
+The agent command is in `.proven/agent.json`, an optional file: `{ "command": ["claude", "-p", ...] }`. Without it
+Proven runs `claude -p --model claude-sonnet-5-5 --permission-mode acceptEdits --allowedTools "Bash(node bin/proven.js
+done *)" --output-format stream-json --verbose`. The command is a list of words that is run without a shell, with the
+prompt as the last word. It is not in `.proven/config.json` and no lock pins it, so receipts verify as before.
+
+What it does not do: it does not write tickets, freeze tests or record red (the guard blocks the agent from running
+`proven loop` too). It does not raise the attempt limit: a ticket that needs a person stops there, and so does an agent
+that exits without a green. It does not decide anything: Kane's result through `proven done` and `proven recheck` is
+the only verdict. If the agent program is not on PATH it says "did not run" and exits 2. Exit codes: 0 every ticket it
+handled is done and the last recheck passes, 1 a ticket needs a person, the agent stopped without a green or the last
+recheck reopened a ticket, 2 something did not run.
+
 ## How the agent loop works with Claude Code
 
 `proven init` writes three files, which are already committed in this repository:
 
 - `.claude/hooks/proven-guard.mjs`, run by a PreToolUse hook in `.claude/settings.json` before every Write, Edit,
   MultiEdit, NotebookEdit and Bash call. It blocks changes under `tickets/` (where Kane also keeps its recordings),
-  `receipts/`, `.proven/` and `.claude/`, and the commands `proven new`, `proven freeze` and `proven red`, which are a
-  person's steps. From the shell it fails closed: a command that writes files (`cp`, `mv`, `ln`, `rsync`, `mkdir`,
+  `receipts/`, `.proven/` and `.claude/`, and the commands `proven new`, `proven freeze`, `proven red` and `proven loop`,
+  which are a person's steps. From the shell it fails closed: a command that writes files (`cp`, `mv`, `ln`, `rsync`, `mkdir`,
   `rm`, `dd`, `tar`, `sed -i`, `find -delete` and others, also behind `env`, `sudo`, `timeout` or `xargs`) is blocked
   when any of its arguments points there, as are `>`, `tee` and inline code (`node -e`, `python -c`) that names those
   folders. It exits with code 2 and says why on stderr, which Claude Code shows to the agent. It is defence in depth:
@@ -123,10 +148,12 @@ It listens on 127.0.0.1 only and answers only requests addressed to localhost, s
 | `proven verify receipts/T-N.json [--replay]` | anyone | re-checks a receipt with git, and with `--replay` with Kane at red and green |
 | `proven recheck [T-N ...]` | person or agent | runs done tickets' tests again and reopens one whose failure a second run confirms |
 | `proven board [--port 8090] [--judge]` | anyone | the local board |
+| `proven loop [T-N ...]` | person | hands each red or reopened ticket to the coding agent, shows the agent and Kane live, rechecks, hands back what reopens (at most 2 rounds) |
 | `proven init` | person | the Claude Code guard rails |
 
 Exit codes for `red` and `done`: 0 ok, 1 Kane failed (or, at red, the test already passes), 2 did not run. For
-`recheck`: 0 all still pass, 1 a ticket reopened, 2 something did not run.
+`recheck`: 0 all still pass, 1 a ticket reopened, 2 something did not run. For `loop`: 0 all done and the last recheck passes, 1 needs
+a person, agent stopped without a green or a reopen at the end, 2 something did not run.
 
 ## How a run counts
 

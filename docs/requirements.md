@@ -149,7 +149,7 @@ way.
 1. WHEN a person runs `proven loop [T-N ...]` THE SYSTEM SHALL take each named ticket, or by default every ticket that
    is red, in progress or reopened in id order, and start the coding agent for it, one ticket at a time. The agent
    command SHALL come from `.proven/agent.json` (default: `claude -p --model claude-sonnet-5-5 --permission-mode
-   acceptEdits --allowedTools "Bash(node bin/proven.js done *)"`). It SHALL be kept out of `.proven/config.json` and
+   acceptEdits --allowedTools "Bash(node bin/proven.js done *)" --output-format stream-json --verbose`). It SHALL be kept out of `.proven/config.json` and
    out of every lock, so existing locks and receipts verify unchanged.
 2. THE SYSTEM SHALL start the agent with a fixed prompt that names only the ticket id and the files to read
    (`tickets/T-N.md`, and for a reopened ticket `.proven/state/T-N.json`), passed as a program argument with no shell.
