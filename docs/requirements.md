@@ -48,8 +48,11 @@ did something.
 1. WHEN a person runs `proven red T-N` THE SYSTEM SHALL refuse while the app folder has uncommitted changes (so the red
    commit holds exactly the code Kane judged), then check that the start URL answers HTTP 200 and, if it does not,
    report "did not run: the app is not answering at <url>" and record nothing.
-2. THE SYSTEM SHALL run `kane-cli testmd run tickets/T-N_test.md --agent --headless` with its own time limit (default
-   300 s) and read Kane's NDJSON events, never Kane's human-readable text.
+2. THE SYSTEM SHALL run `kane-cli testmd run tickets/T-N_test.md --agent --headless --author` with its own time limit
+   (default 300 s) and read Kane's NDJSON events, never Kane's human-readable text. Kane's recording folder for the test
+   SHALL be moved out of the repository for the run and put back exactly as it was, so Kane authors every step from the
+   frozen test and no recording decides a verdict; a run whose events show a replayed step, or whose output folder holds
+   a file older than the run, SHALL count as "did not run".
 3. THE SYSTEM SHALL count the run as red only WHEN Kane's `test_md_done` reports `overall_status` failed AND the first
    step (the landmark) passed AND a later step failed (Kane skips the steps after it). It SHALL record the git commit
    (HEAD), the first failed step's number and title, Kane's `one_liner` and `reason` for it, the run's duration and
@@ -100,11 +103,11 @@ author.
 ## Requirement 5: Reopen on regression
 **User story:** As a person, I want a closed ticket to reopen when later work breaks it, so that done stays done.
 ### Acceptance criteria
-1. WHEN a person or the agent runs `proven recheck` THE SYSTEM SHALL replay the frozen test of every done ticket with
-   `--no-adaptive-heal`.
-2. IF a replay fails THEN THE SYSTEM SHALL confirm with one fresh authoring run before acting, and only a confirmed
-   failure SHALL move the ticket to "reopened", keep the failing step and Kane's reason, and require a new green through
-   `proven done`.
+1. WHEN a person or the agent runs `proven recheck` THE SYSTEM SHALL run the frozen test of every done ticket again,
+   fresh as in 2.2 and with `--no-adaptive-heal`, against the app as committed at HEAD.
+2. IF that run fails THEN THE SYSTEM SHALL confirm with a second fresh run before acting, and only a confirmed failure
+   SHALL move the ticket to "reopened", keep the failing step, Kane's reason and the app tree Kane judged, and require a
+   new green through `proven done`, whose receipt links the earlier one.
 
 ## Requirement 6: The board
 **User story:** As a person (and a judge), I want to see every ticket's evidence at a glance.
@@ -129,8 +132,8 @@ red itself.
 ## Requirement 8: Demo, judge mode and honesty
 ### Acceptance criteria
 1. THE repository SHALL hold a small demo shop under `demo/app/`, served by a script that sends `Cache-Control:
-   no-store`, and at least three demo tickets, one of which a later ticket's change breaks, so that `recheck` reopens
-   it. The demo's bugs SHALL NOT be announced in comments or text on the page, because Kane reads the page.
+   no-store`, and at least three demo tickets, written so that the plain reading of a later ticket breaks an earlier one, so that
+   `recheck` can reopen it. The demo's bugs SHALL NOT be announced in comments or text on the page, because Kane reads the page.
 2. WHEN a judge runs `npm start` without a Kane login THE SYSTEM SHALL show the board with the committed receipts and
    say that new runs need `kane-cli login`.
 3. THE README SHALL state the limits: receipts are tamper-evident for hashed files, not signed by Kane; Kane's verdicts
@@ -138,7 +141,34 @@ red itself.
    because they carry the runner's name and email.
 4. THE project SHALL use Node.js 22 or newer and no runtime dependencies.
 
+## Requirement 9: Kane's verdict goes back to the agent with no person in between
+**User story:** As a person, I want Kane's failures handed straight back to the coding agent, so that after I write,
+freeze and record red, the agent and Kane work the ticket out between them, and a later break is handed back the same
+way.
+### Acceptance criteria
+1. WHEN a person runs `proven loop [T-N ...]` THE SYSTEM SHALL take each named ticket, or by default every ticket that
+   is red, in progress or reopened in id order, and start the coding agent for it, one ticket at a time. The agent
+   command SHALL come from `.proven/agent.json` (default: `claude -p --model claude-sonnet-5-5 --permission-mode
+   acceptEdits --allowedTools "Bash(node bin/proven.js done *)"`). It SHALL be kept out of `.proven/config.json` and
+   out of every lock, so existing locks and receipts verify unchanged.
+2. THE SYSTEM SHALL start the agent with a fixed prompt that names only the ticket id and the files to read
+   (`tickets/T-N.md`, and for a reopened ticket `.proven/state/T-N.json`), passed as a program argument with no shell.
+   Kane's words SHALL reach the agent only through what `proven done` prints and the state file, never on a command
+   line.
+3. WHILE the agent works THE SYSTEM SHALL print each attempt as `proven done` records it (attempt number, Kane's
+   verdict, the failing step and Kane's one-liner), so a person can follow the loop live.
+4. WHEN the agent exits THE SYSTEM SHALL read the ticket's state. Done, with a receipt that verifies as in 4.2, moves on
+   to the next ticket. "Needs a person" (the attempt limit of 3.2) stops work on that ticket and says so. Anything else
+   is reported as "the agent stopped without a green" with its exit code. The loop SHALL start at most one agent
+   session per ticket per round.
+5. WHEN every ticket in a round is done THE SYSTEM SHALL run `proven recheck` (Requirement 5). IF it reopens a ticket
+   THEN THE SYSTEM SHALL hand that ticket back to the agent as in 9.1 to 9.4, for at most 2 rounds in one `proven loop`,
+   and SHALL end with a recheck whose result it prints.
+6. `proven loop` is a person's step: the guard of Requirement 7 SHALL block the agent from running it.
+7. `proven loop` SHALL exit 0 when every ticket it handled is done and the last recheck passes, 1 when a ticket needs a
+   person, the agent stopped without a green, or the last recheck reopened a ticket, and 2 when something did not run.
+
 ## Build order
 Build Requirements 1 to 4 against `demo/app/` first and stop: the first gate is one ticket going red, the agent fixing
 it, the ticket going green and a receipt that `proven verify` confirms, twice, with no hand edits. Requirements 5 to 8
-come after that gate.
+come after that gate. Requirement 9 comes after a live rehearsal of Requirements 4.3 and 5.
