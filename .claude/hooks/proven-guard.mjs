@@ -16,7 +16,7 @@ import { pathToFileURL } from 'node:url';
 // Tickets, receipts, Proven's state and these guard rails, and Proven's own code and files: the agent runs
 // proven done as the judge, so it must not be able to change the judge. Names are lowercase (compared without case).
 export const PROTECTED = [
-  'tickets', 'receipts', '.proven', '.claude',
+  'tickets', 'receipts', '.proven', '.claude', '.git',
   'bin', 'src', 'package.json', 'package-lock.json', 'node_modules', 'test', 'docs', '.gitignore', 'readme.md',
 ];
 export const PERSON_STEPS = ['new', 'freeze', 'red', 'loop'];
@@ -44,6 +44,7 @@ const WHY = {
   receipts: 'Receipts are written only by proven done, when Kane passes the frozen test.',
   '.proven': 'Proven writes its own state there.',
   '.claude': 'That folder holds these guard rails.',
+  '.git': 'Git config, hooks and refs decide what Proven trusts.',
 };
 const OWN = 'That is part of Proven itself, which judges the ticket, so the agent does not change it.';
 for (const name of PROTECTED) WHY[name] ??= OWN;

@@ -195,6 +195,8 @@ export async function cmdRecheck(ctx, ids) {
   const results = [];
   for (const t of done) results.push(await recheckOne(ctx, t, kane));
 
+  // A caller that runs recheck in-process (proven loop) can read each ticket's own result.
+  if (ctx.recheckResults) done.forEach((t, i) => ctx.recheckResults.set(t.id, results[i]));
   const reopened = done.filter((t, i) => results[i] === 'reopened').map((t) => t.id);
   const notRun = results.filter((r) => r === 'not-run').length;
   if (reopened.length) out.both(`Reopened: ${reopened.join(', ')}.`);

@@ -1,4 +1,7 @@
 import { spawn } from 'node:child_process';
+import { lstatSync, readdirSync, readFileSync, readlinkSync } from 'node:fs';
+import { join } from 'node:path';
+import { canonicalJson, sha256 } from '../hash.js';
 import { bypassFlag, loadAgentCommand, wantsStreamJson, AGENT_PATH } from '../agent.js';
 import { Refusal } from '../errors.js';
 import { changedPaths, fileAt, git, head, short } from '../git.js';
@@ -73,7 +76,7 @@ function printAttempts(ctx, id, since) {
       continue;
     }
     if (state.status === 'done') {
-      out.say(`${id} attempt ${state.attempts + 1} of ${config.maxAttempts}: Kane passed.`);
+      out.say(`${id} attempt ${state.attempts + 1} of ${config.maxAttempts}: Kane passed in proven done (not yet confirmed).`);
     } else if (state.last_failure && state.last_failure.attempt === state.attempts) {
       const f = state.last_failure;
       const says = plain(f.kane_one_liner);
@@ -130,16 +133,18 @@ function runAgent(ctx, id, cmd, prompt, streamJson) {
   });
 }
 
-// One agent session for one ticket. Returns 'done', 'needs-a-person', 'stopped', 'tampered' or 'not-run'.
+// One agent session for one ticket. Returns 'closed' (Kane passed in proven done, not yet confirmed), 'needs-a-person', 'stopped', 'tampered' or 'not-run'.
 async function session(ctx, id, i, n, cmd, streamJson) {
   const { root, out } = ctx;
   const { status } = readStatus(root, id);
   const before = head(root);
-  const dirty = changedOwn(root, OWN_PATHS);
+  const dirty = [...changedOwn(root, OWN_PATHS), ...hiddenFlags(root)];
   if (dirty.length) {
     out.both(`did not run: ${dirty.join(', ')} (Proven's own files) have uncommitted changes, so the loop could not tell the agent's changes from yours. Commit or restore them first.`);
     return 'not-run';
   }
+  const pre = { state: loadState(root, id) };
+  const hashesBefore = hashTree(root);
   out.say(`${id}: starting the agent (${i} of ${n}).`);
   const result = await runAgent(ctx, id, cmd, status === 'reopened' ? reopenedPrompt(id) : redPrompt(id), streamJson);
   if (result.notStarted) {
@@ -151,7 +156,7 @@ async function session(ctx, id, i, n, cmd, streamJson) {
     );
     return 'not-run';
   }
-  const tampered = sessionTampering(ctx, before);
+  const tampered = sessionTampering(ctx, id, before, pre, hashesBefore);
   if (tampered.length) {
     out.both(`Proven's own files changed during the agent's session: ${tampered.join(', ')}. Nothing from this session is trusted.`);
     return 'tampered';
@@ -160,10 +165,7 @@ async function session(ctx, id, i, n, cmd, streamJson) {
   if (after.status === 'done') {
     const at = receiptCommitAtHead(root, id);
     const failed = at ? verifyReceipt(root, at.bytes).checks.filter((c) => !c.ok) : [{ name: 'receipt', detail: 'it is not committed as Proven wrote it' }];
-    if (!failed.length) {
-      out.say(`${id} is done: receipt verifies.`);
-      return 'done';
-    }
+    if (!failed.length) return 'closed';
     out.both(`${id}: the agent stopped without a green: the receipt does not verify (${failed[0].name}: ${failed[0].detail}).`);
     return 'stopped';
   }
@@ -186,30 +188,118 @@ function changedOwn(root, paths) {
   return [...new Set([...lines(['diff', '--name-only', '-z', 'HEAD', '--', ...paths]), ...lines(['ls-files', '--others', '--exclude-standard', '-z', '--', ...paths])])];
 }
 
-// Is this a commit proven done (or its attempt record) makes: the app tree Kane judged, a state file, or a receipt
-// with the state? Returns the paths that make it something else, or [].
-function foreignPaths(root, config, commit) {
-  const subject = git(root, ['log', '-1', '--format=%s', commit]).trim();
-  const paths = changedPaths(root, commit);
-  const id = /^(T-[1-9][0-9]*): /.exec(subject)?.[1];
-  if (!id || !paths.length) return paths.length ? paths : [`commit ${short(commit)}`];
-  const p = ticketPaths(id);
-  const app = (x) => x.startsWith(config.app + '/');
-  const shaped =
-    (subject === `${id}: app change that Kane passed` && paths.every(app)) ||
-    (paths.length === 1 && paths[0] === p.state) ||
-    (subject.startsWith(`${id}: receipt`) && paths.every((x) => x === p.state || x === p.receipt));
-  return shaped ? [] : paths.length ? paths : [`commit ${short(commit)}`];
+// Everything whose change would change the judge or what Proven trusts, hashed byte for byte, ignored files included.
+// Kane's recordings under tickets/output-* are the one thing proven done writes there, and they are never trusted.
+const HASHED = ['bin', 'src', 'package.json', 'package-lock.json', '.claude', 'test', 'node_modules', 'tickets', '.proven/config.json', '.git/info/exclude', '.git/config', '.git/hooks'];
+const SKIP_DIRS = new Set(['.git', 'node_modules', '.testmuai']);
+
+function hashTree(root) {
+  const map = new Map();
+  const visit = (rel, { ignoreFiles = false } = {}) => {
+    let st;
+    try {
+      st = lstatSync(join(root, rel));
+    } catch {
+      return;
+    }
+    const name = rel.split('/').at(-1);
+    if (st.isSymbolicLink()) map.set(rel, `link:${readlinkSync(join(root, rel))}`);
+    else if (st.isDirectory()) {
+      if (name.startsWith('output-')) return;
+      for (const child of readdirSync(join(root, rel)).sort()) visit(`${rel}/${child}`, { ignoreFiles });
+    } else if (!ignoreFiles || name === '.gitignore') map.set(rel, sha256(readFileSync(join(root, rel))));
+  };
+  for (const rel of HASHED) visit(rel);
+  // Every .gitignore in the project decides what git leaves out.
+  const walk = (rel) => {
+    for (const child of readdirSync(join(root, rel || '.')).sort()) {
+      const path = rel ? `${rel}/${child}` : child;
+      const st = lstatSync(join(root, path));
+      if (st.isDirectory() && !SKIP_DIRS.has(child) && !child.startsWith('output-')) walk(path);
+      else if (child === '.gitignore') map.set(path, sha256(readFileSync(join(root, path))));
+    }
+  };
+  walk('');
+  return map;
 }
 
-// After an agent session: Proven's code, the guard rails and the tickets are as they were, and every commit made
-// meanwhile is one that proven done makes. Returns the paths that say otherwise.
-function sessionTampering(ctx, before) {
+function hashDiff(before, after) {
+  const out = [];
+  for (const k of new Set([...before.keys(), ...after.keys()])) if (before.get(k) !== after.get(k)) out.push(k);
+  return out;
+}
+
+// Paths git is told to ignore the changes of (skip-worktree or assume-unchanged), under the protected paths.
+function hiddenFlags(root) {
+  const out = git(root, ['ls-files', '-v', '-z', '--', ...OWN_PATHS, 'tickets'], { allowFail: true }) ?? '';
+  return out.split('\0').filter((l) => l.length > 2 && (l[0] === 'S' || /[a-z]/.test(l[0]))).map((l) => l.slice(2));
+}
+
+// The ticket's red record is part of what the agent was handed; a session cannot change it.
+const sameRed = (a, b) => canonicalJson(a ?? null) === canonicalJson(b ?? null);
+
+// The commits of one session, checked against the state the ticket was in when it began. They must name the ticket
+// that was handed over, touch only its state, its receipt and the app, be shaped like proven done's own, leave the red
+// record alone, never lower the attempt count, and say done only with a receipt whose red is that record.
+function sessionCommits(ctx, id, before, pre) {
   const { root, config } = ctx;
-  const bad = changedOwn(root, [...OWN_PATHS, 'tickets']);
+  const p = ticketPaths(id);
+  const bad = [];
   const commits = (git(root, ['rev-list', '--reverse', `${before}..HEAD`], { allowFail: true }) ?? '').split('\n').filter(Boolean);
+  let prev = pre.state;
+  const read = (commit, rel) => {
+    try {
+      return JSON.parse(fileAt(root, commit, rel).toString('utf8'));
+    } catch {
+      return null;
+    }
+  };
+  for (const c of commits) {
+    const subject = git(root, ['log', '-1', '--format=%s', c]).trim();
+    const paths = changedPaths(root, c);
+    const flag = (why) => bad.push(...(paths.length ? paths : [`commit ${short(c)}`]).map((x) => (why ? `${x} (${why})` : x)));
+    const app = (x) => x.startsWith(config.app + '/');
+    if (!subject.startsWith(`${id}: `) || !paths.length || !paths.every((x) => x === p.state || x === p.receipt || app(x))) {
+      flag(subject.startsWith(`${id}: `) ? '' : `not ${id}`);
+      continue;
+    }
+    if (subject === `${id}: app change that Kane passed` && paths.every(app)) continue;
+    const isReceipt = subject.startsWith(`${id}: receipt`) && paths.length === 2 && paths.includes(p.state) && paths.includes(p.receipt);
+    const isState = paths.length === 1 && paths[0] === p.state;
+    if (!isReceipt && !isState) {
+      flag('not a commit proven done makes');
+      continue;
+    }
+    const state = read(c, p.state);
+    if (!state || !sameRed(state.red, pre.state.red)) {
+      flag('red record changed');
+      continue;
+    }
+    const allowed = isReceipt ? ['done'] : ['in-progress', 'needs-a-person'];
+    const step = isReceipt ? 0 : 1;
+    if (!allowed.includes(state.status) || !Number.isInteger(state.attempts) || state.attempts < prev.attempts || state.attempts - prev.attempts > step) {
+      flag('state does not follow from the one before');
+      continue;
+    }
+    if (isReceipt) {
+      const receipt = read(c, p.receipt);
+      const okRed = receipt && receipt.red && Object.keys(receipt.red).every((k) => sameRed(receipt.red[k], pre.state.red[k]));
+      if (!receipt || receipt.ticket !== id || !okRed || receipt.green?.app_tree !== state.green?.app_tree || receipt.green?.failed_attempts !== state.attempts) {
+        flag('receipt does not match the red the session began with');
+        continue;
+      }
+    }
+    prev = state;
+  }
+  return bad;
+}
+
+// After an agent session. Returns what says Proven's code, git setup, tickets or history were touched.
+function sessionTampering(ctx, id, before, pre, hashesBefore) {
+  const { root } = ctx;
+  const bad = [...changedOwn(root, [...OWN_PATHS, 'tickets']), ...hashDiff(hashesBefore, hashTree(root)), ...hiddenFlags(root)];
   if (head(root) !== before && git(root, ['merge-base', '--is-ancestor', before, 'HEAD'], { allowFail: true }) === null) bad.push('history was rewritten');
-  for (const c of commits) bad.push(...foreignPaths(root, config, c));
+  bad.push(...sessionCommits(ctx, id, before, pre));
   return [...new Set(bad)];
 }
 
@@ -263,18 +353,32 @@ export async function cmdLoop(ctx, ids, flags = {}) {
 
   for (let round = 0; ; round++) {
     let stopped = stuck;
+    const closed = [];
     for (const [k, id] of pending.entries()) {
       const result = await session(ctx, id, k + 1, pending.length, cmd, streamJson);
       if (result === 'not-run') return 2;
       if (result === 'tampered') return 1;
-      if (result !== 'done') stopped = true;
+      if (result === 'closed') closed.push(id);
+      else stopped = true;
     }
     if (stopped) {
       out.both('Loop stopped: a ticket needs a person or the agent stopped without a green. No recheck was run.');
       return 1;
     }
-    const code = await cmdRecheck(ctx, []);
-    if (code === 2) {
+    // Nothing a session says is taken as the verdict: Kane runs again, from this process's own code, on every done
+    // ticket, including the ones the agent just closed.
+    const recheckResults = new Map();
+    const code = await cmdRecheck({ ...ctx, recheckResults }, []);
+    let unconfirmed = false;
+    for (const id of closed) {
+      const r = recheckResults.get(id);
+      if (r === 'passed') out.say(`${id} is done: confirmed by a fresh Kane run from proven loop.`);
+      else if (r !== 'reopened') {
+        out.both(`${id} is not confirmed: the fresh Kane run did not complete.`);
+        unconfirmed = true;
+      }
+    }
+    if (code === 2 || unconfirmed) {
       out.both('Loop stopped: the recheck did not run to the end.');
       return 2;
     }

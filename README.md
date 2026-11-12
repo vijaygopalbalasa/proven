@@ -72,12 +72,15 @@ prompt as the last word. It is not in `.proven/config.json` and no lock pins it,
 
 What it does not do: it does not write tickets, freeze tests or record red (the guard blocks the agent from running
 `proven loop` too). The guard also blocks the agent from writing to Proven's own code and files (`bin/`, `src/`,
-`package.json`, `node_modules/`, `test/`, `docs/`, `.gitignore`, `README.md`), so the agent's only writable area is the
+`package.json`, `node_modules/`, `test/`, `docs/`, `.gitignore`, `README.md`, `.git/`), so the agent's only writable area is the
 app folder. After every agent session `proven loop` checks git: `bin/`, `src/`, `package.json`, `.claude/`, `test/` and
 `tickets/` must be unchanged, and every commit made during the session must be one that `proven done` makes (the app
 tree Kane judged, a state file, a receipt). If not, it prints "Proven's own files changed during the agent's session",
 trusts nothing from that session, runs no recheck and exits 1. A person's uncommitted change to those files stops the
-loop before it starts. This is a check, not a sandbox. It does not raise the attempt limit: a ticket that needs a person stops there, and so does an agent
+loop before it starts. `proven loop` does not trust a verdict made inside the agent's session: after every session it checks git and hashes
+of Proven's files (including ignored files, `.git/config`, hooks and every `.gitignore`), then re-runs Kane on every
+closed ticket from its own code before it reports done; `verify --replay` remains the check anyone can run. This is a
+check, not a sandbox. It does not raise the attempt limit: a ticket that needs a person stops there, and so does an agent
 that exits without a green. It does not decide anything: Kane's result through `proven done` and `proven recheck` is
 the only verdict. If the agent program is not on PATH it says "did not run" and exits 2. Exit codes: 0 every ticket it
 handled is done and the last recheck passes, 1 a ticket needs a person, the agent stopped without a green or the last
