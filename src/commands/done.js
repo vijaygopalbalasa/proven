@@ -55,7 +55,7 @@ export async function cmdDone(ctx, [id]) {
   if (status === 'needs-a-person') {
     throw new Refusal(`${id} needs a person after ${state.attempts} failed attempts. Stop and leave it for a person.`);
   }
-  if (status !== 'red' && status !== 'in-progress') throw new Refusal(`${p.state} has an unknown status "${status}".`);
+  if (status !== 'red' && status !== 'in-progress' && status !== 'reopened') throw new Refusal(`${p.state} has an unknown status "${status}".`);
 
   checkRedRecord(root, id, state, lock);
   const redKane = state.red.kane;
@@ -183,6 +183,10 @@ export async function cmdDone(ctx, [id]) {
       failed_attempts: state.attempts,
       app_tree: run.appTree,
     },
+    // A ticket that proven recheck reopened links the receipt of its earlier close.
+    previous: state.reopened?.previous
+      ? { commit: state.reopened.previous.commit, receipt_sha256: state.reopened.previous.receipt_sha256 }
+      : undefined,
   });
   writeJson(root, p.receipt, receipt, { exact: run.exact });
   writeState(
@@ -207,5 +211,8 @@ export async function cmdDone(ctx, [id]) {
   if (head(root) !== r.commit || !existsSync(join(root, p.receipt))) throw new Error('the receipt commit is not HEAD');
 
   out.both(`Done: red ${short(redCommit)}, green ${short(G)}.`);
+  if (receipt.previous) {
+    out.both(`This receipt links the earlier one (${short(receipt.previous.receipt_sha256)}, committed in ${short(receipt.previous.commit)}), which proven recheck reopened.`);
+  }
   return 0;
 }

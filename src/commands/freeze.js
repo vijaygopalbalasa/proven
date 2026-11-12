@@ -35,7 +35,7 @@ export async function cmdFreeze({ root, config, out }, [id]) {
   const state = loadState(root, id);
   const status = oldLock ? statusOf(state, oldLock) : (state?.status ?? 'new');
   if (status === 'done') throw new Refusal(`${id} is done and its receipt stays as it is. Write a new ticket for new work.`);
-  if (status === 'red' || status === 'in-progress') {
+  if (status === 'red' || status === 'in-progress' || status === 'reopened') {
     throw new Refusal(`${id} is red and the agent may be working on it. Freezing it again now would move the goalposts.`);
   }
 

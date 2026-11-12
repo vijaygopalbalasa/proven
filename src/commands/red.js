@@ -16,6 +16,9 @@ export async function cmdRed(ctx, [id]) {
   const state = loadState(root, id);
   const status = statusOf(state, lock);
   if (status === 'red' || status === 'in-progress') throw new Refusal(`${id} is already red at ${short(state.red?.commit)}.`);
+  if (status === 'reopened') {
+    throw new Refusal(`${id} was reopened by proven recheck at ${short(state.red?.commit)}, so it is red again. The agent fixes the app and runs proven done ${id}.`);
+  }
   if (status === 'already-passes') {
     throw new Refusal(`${id} already passes: this test proves nothing yet. A person sharpens the criteria and runs proven freeze ${id} again.`);
   }

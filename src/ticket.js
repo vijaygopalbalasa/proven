@@ -1,3 +1,5 @@
+import { readdirSync } from 'node:fs';
+import { join } from 'node:path';
 import { Refusal } from './errors.js';
 
 export const ID_RE = /^T-[1-9][0-9]*$/;
@@ -6,6 +8,22 @@ const LOCAL_HOSTS = ['localhost', '127.0.0.1', '[::1]'];
 
 export function checkId(id) {
   if (!id || !ID_RE.test(id)) throw new Refusal(`"${id ?? ''}" is not a ticket id. Use T-1, T-2 and so on.`);
+}
+
+// Ticket ids that have a ticket, state or receipt file here, in number order.
+export function ticketIds(root) {
+  const ids = new Set();
+  for (const dir of ['tickets', '.proven/state', 'receipts']) {
+    let names = [];
+    try {
+      names = readdirSync(join(root, dir));
+    } catch {}
+    for (const name of names) {
+      const m = /^(T-[1-9][0-9]*)(?:\.md|\.lock\.json|\.json)$/.exec(name);
+      if (m) ids.add(m[1]);
+    }
+  }
+  return [...ids].sort((a, b) => Number(a.slice(2)) - Number(b.slice(2)));
 }
 
 export function ticketPaths(id) {

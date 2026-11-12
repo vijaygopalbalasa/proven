@@ -6,6 +6,7 @@ import { cmdFreeze } from './commands/freeze.js';
 import { cmdRed } from './commands/red.js';
 import { cmdDone } from './commands/done.js';
 import { cmdVerify } from './commands/verify.js';
+import { cmdRecheck } from './commands/recheck.js';
 
 export const USAGE = `proven: a ticket closes only when Kane CLI saw it fail before the change and pass after it.
 
@@ -14,12 +15,16 @@ export const USAGE = `proven: a ticket closes only when Kane CLI saw it fail bef
   proven red T-N                     prove the test fails on the code as it is (person)
   proven done T-N                    the agent says it is done; Kane decides
   proven verify receipts/T-N.json    re-check a receipt with git only
+  proven verify receipts/T-N.json --replay
+                                     and run Kane again with the app at red (must fail) and at green (must pass)
+  proven recheck [T-N ...]           replay every done ticket; reopen one whose failure a fresh run confirms
 
 Kane is always kane-cli from PATH. Settings live in .proven/config.json (app, timeout_s, max_attempts)
 and are pinned when a ticket is frozen.
-Exit codes for red and done: 0 ok, 1 Kane failed (or already passes at red), 2 did not run.`;
+Exit codes for red and done: 0 ok, 1 Kane failed (or already passes at red), 2 did not run.
+Exit codes for recheck: 0 all still pass, 1 a ticket reopened, 2 something did not run.`;
 
-const COMMANDS = { new: cmdNew, freeze: cmdFreeze, red: cmdRed, done: cmdDone, verify: cmdVerify };
+const COMMANDS = { new: cmdNew, freeze: cmdFreeze, red: cmdRed, done: cmdDone, verify: cmdVerify, recheck: cmdRecheck };
 const VALUE_FLAGS = new Set(['url', 'landmark']);
 
 export function parseArgs(argv) {

@@ -75,9 +75,48 @@ export function lockChain(root, id, lock) {
   return L;
 }
 
+function readStateAt(root, id, commit) {
+  try {
+    return JSON.parse(fileAt(root, commit, ticketPaths(id).state)?.toString('utf8') ?? 'null');
+  } catch {
+    return null;
+  }
+}
+
+// The state history after the lock commit L, in rounds. Round 1 starts with the red record, right on L. A later round
+// starts when proven recheck reopens a done ticket: its state commit follows a done and sits right on the commit it
+// names as red. Inside a round come the failed attempts, then needs a person or done.
+export function stateRounds(root, id, L) {
+  const p = ticketPaths(id);
+  const rounds = [];
+  let prev = null;
+  for (const c of commitsTouchingOldestFirst(root, L, 'HEAD', p.state)) {
+    const s = readStateAt(root, id, c);
+    if (!s || typeof s !== 'object') throw new Refusal(`${p.state} at ${short(c)} is not valid JSON. A person needs to look at ${id}.`);
+    if (!rounds.length) {
+      rounds.push({ kind: 'red', redCommit: L, start: c, first: s, commits: [c] });
+    } else if (s.status === 'reopened') {
+      if (prev.status !== 'done') {
+        throw new Refusal(`${p.state} records a reopen in ${short(c)} that does not follow a done. A person needs to look at ${id}.`);
+      }
+      if (typeof s.red?.commit !== 'string' || parentOf(root, c) !== s.red.commit) {
+        throw new Refusal(`The reopen commit ${short(c)} of ${id} does not sit on the commit it names as red. A person needs to look at ${id}.`);
+      }
+      rounds.push({ kind: 'reopened', redCommit: s.red.commit, start: c, first: s, commits: [c] });
+    } else {
+      if (prev.status === 'done' || prev.status === 'needs-a-person') {
+        throw new Refusal(`${p.state} records "${s.status}" in ${short(c)} after "${prev.status}". A person needs to look at ${id}.`);
+      }
+      rounds.at(-1).commits.push(c);
+    }
+    prev = s;
+  }
+  return rounds;
+}
+
 // Cheap invariants on the red record, which an agent with a shell could otherwise rewrite: every field is present
 // (nothing is assumed), the first state commit after the lock sits right on the lock commit and records red there,
-// and no later state commit changes the red record.
+// a reopen sits right on its own red commit, and no later state commit in a round changes that round's red record.
 export function checkRedRecord(root, id, state, lock) {
   const p = ticketPaths(id);
   const red = state.red;
@@ -88,24 +127,32 @@ export function checkRedRecord(root, id, state, lock) {
     }
   }
   const L = lockChain(root, id, lock);
-  const stateCommits = commitsTouchingOldestFirst(root, L, 'HEAD', p.state);
-  if (!stateCommits.length) throw new Refusal(`No commit after the lock records red in ${p.state}. A person needs to look at ${id}.`);
-  if (parentOf(root, stateCommits[0]) !== L) {
-    throw new Refusal(`The first state commit after the lock, ${short(stateCommits[0])}, does not sit on the lock commit ${short(L)}. A person needs to look at ${id}.`);
+  const rounds = stateRounds(root, id, L);
+  if (!rounds.length) throw new Refusal(`No commit after the lock records red in ${p.state}. A person needs to look at ${id}.`);
+  if (parentOf(root, rounds[0].start) !== L) {
+    throw new Refusal(`The first state commit after the lock, ${short(rounds[0].start)}, does not sit on the lock commit ${short(L)}. A person needs to look at ${id}.`);
   }
-  if (red.commit !== L) {
-    throw new Refusal(`The red record in ${p.state} names ${short(red.commit)}, but red was recorded on ${short(L)}. A person needs to look at ${id}.`);
+  const round = rounds.at(-1);
+  if (red.commit !== round.redCommit) {
+    throw new Refusal(`The red record in ${p.state} names ${short(red.commit)}, but red was recorded on ${short(round.redCommit)}. A person needs to look at ${id}.`);
   }
-  const first = JSON.parse(fileAt(root, stateCommits[0], p.state)?.toString('utf8') ?? 'null');
-  if (!first || first.status !== 'red' || canonicalJson(first.red) !== canonicalJson(red)) {
-    throw new Refusal(`The red record in ${p.state} changed in commit ${short(stateCommits.at(-1))}. A person needs to look at ${id}.`);
-  }
-  for (const c of stateCommits.slice(1)) {
-    const later = JSON.parse(fileAt(root, c, p.state)?.toString('utf8') ?? 'null');
-    if (!later || canonicalJson(later.red) !== canonicalJson(first.red)) {
-      throw new Refusal(`The red record in ${p.state} changed in commit ${short(c)}. A person needs to look at ${id}.`);
+  for (const r of rounds) {
+    const opening = r.kind === 'red' ? 'red' : 'reopened';
+    const last = r === round ? red : null;
+    if (r.first.status !== opening || (last && canonicalJson(r.first.red) !== canonicalJson(last))) {
+      throw new Refusal(`The red record in ${p.state} changed in commit ${short(r.commits.at(-1))}. A person needs to look at ${id}.`);
+    }
+    if (r.first.red?.commit !== r.redCommit) {
+      throw new Refusal(`The red record in ${p.state} at ${short(r.start)} names ${short(r.first.red?.commit)}, but red was recorded on ${short(r.redCommit)}. A person needs to look at ${id}.`);
+    }
+    for (const c of r.commits.slice(1)) {
+      const later = readStateAt(root, id, c);
+      if (!later || canonicalJson(later.red) !== canonicalJson(r.first.red)) {
+        throw new Refusal(`The red record in ${p.state} changed in commit ${short(c)}. A person needs to look at ${id}.`);
+      }
     }
   }
+  return { L, rounds };
 }
 
 // Every failed attempt is one Proven commit of the state file after red, so the history must show
