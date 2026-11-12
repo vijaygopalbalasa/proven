@@ -1,0 +1,67 @@
+:root {
+  --ink: #1f1b16;
+  --muted: #6b6259;
+  --line: #e4ddd3;
+  --paper: #faf7f2;
+  --accent: #8a4b2a;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  color: var(--ink);
+  background: var(--paper);
+}
+
+.top {
+  display: flex;
+  gap: 16px;
+  align-items: baseline;
+  padding: 16px 24px;
+  border-bottom: 1px solid var(--line);
+  background: #fff;
+}
+
+.brand { font-weight: 700; color: var(--accent); text-decoration: none; font-size: 20px; }
+.tagline { color: var(--muted); font-size: 14px; }
+
+.cart { max-width: 720px; margin: 32px auto; padding: 0 16px; }
+
+h1 { font-size: 28px; margin: 0 0 20px; }
+
+.items { width: 100%; border-collapse: collapse; background: #fff; }
+.items th, .items td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--line); }
+.items th { font-size: 13px; color: var(--muted); font-weight: 600; }
+.items input { width: 64px; padding: 6px; font: inherit; }
+
+.coupon { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 24px 0; }
+.coupon input { padding: 8px; font: inherit; border: 1px solid var(--line); border-radius: 6px; }
+.coupon button {
+  padding: 8px 16px;
+  font: inherit;
+  color: #fff;
+  background: var(--accent);
+  border: 0;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.message { flex-basis: 100%; margin: 0; min-height: 1.2em; color: var(--muted); }
+
+.totals {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px 24px;
+  max-width: 320px;
+  margin: 0 0 0 auto;
+  padding: 16px;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+.totals dt, .totals dd { margin: 0; }
+.totals dd { text-align: right; }
+.totals .grand { font-weight: 700; font-size: 18px; }
+
+.note { text-align: right; color: var(--muted); font-size: 14px; }

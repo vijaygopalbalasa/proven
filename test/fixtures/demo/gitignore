@@ -1,0 +1,11 @@
+# Kane CLI writes runner details (name, email) into evidence packs and session folders: never commit them.
+.testmuai/
+**/output-*/evidence/
+*.evidence
+# Kane's recordings (output-<stem>/ next to each _test.md) carry Kane account and session ids: they stay local.
+tickets/output-*/
+**/output-*/.internal/
+**/output-*/Result.md
+.proven/runs/
+node_modules/
+.DS_Store

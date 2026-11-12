@@ -1,10 +1,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { loadConfig } from '../src/config.js';
 import { parseTestSteps, parseTicket, renderTest, renderTicketTemplate, startUrlOf, ticketProblems, checkId } from '../src/ticket.js';
-import { ROOT } from './support/helpers.js';
+import { FIXTURE_DEMO } from './support/helpers.js';
 
 const good = `# T-1: Coupon SAVE10 takes 10% off
 
@@ -100,14 +101,18 @@ Verify shipping still shows $5.00.
   assert.equal(startUrlOf(steps), 'http://localhost:8091/');
 });
 
-test('the demo tickets and the demo config are ready for the live gate', () => {
-  assert.deepEqual(loadConfig(ROOT), { app: 'demo/app', timeoutS: 300, maxAttempts: 4 });
+test('the demo tickets and settings, as they were before the live gate, are ready to freeze', (t) => {
+  const dir = mkdtempSync(join(tmpdir(), 'proven-config-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  mkdirSync(join(dir, '.proven'));
+  copyFileSync(join(FIXTURE_DEMO, 'proven-config.json'), join(dir, '.proven', 'config.json'));
+  assert.deepEqual(loadConfig(dir), { app: 'demo/app', timeoutS: 300, maxAttempts: 4 });
   for (const id of ['T-1', 'T-2']) {
-    const t = parseTicket(readFileSync(join(ROOT, 'tickets', `${id}.md`), 'utf8'), id);
-    assert.deepEqual(ticketProblems(t), { missing: [], problems: [] }, id);
-    assert.equal(t.url, 'http://localhost:8091/');
-    assert.equal(t.landmark, 'Your cart');
-    assert.equal(parseTestSteps(renderTest(t)).length, 2, id);
+    const ticket = parseTicket(readFileSync(join(FIXTURE_DEMO, 'tickets', `${id}.md`), 'utf8'), id);
+    assert.deepEqual(ticketProblems(ticket), { missing: [], problems: [] }, id);
+    assert.equal(ticket.url, 'http://localhost:8091/');
+    assert.equal(ticket.landmark, 'Your cart');
+    assert.equal(parseTestSteps(renderTest(ticket)).length, 2, id);
   }
 });
 

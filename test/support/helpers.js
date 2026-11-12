@@ -20,6 +20,9 @@ import { fileURLToPath } from 'node:url';
 export const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 export const PROVEN = join(ROOT, 'bin', 'proven.js');
 export const FAKE_KANE = join(ROOT, 'test', 'support', 'fake-kane.js');
+// The demo shop, tickets, settings and ignore rules as they were before the live gate (taken from git at 8f92ff1),
+// so the tests never depend on the live demo/app, tickets/, receipts/ or .proven/.
+export const FIXTURE_DEMO = join(ROOT, 'test', 'fixtures', 'demo');
 export const TEST_EMAIL = ['proven-test', 'example.com'].join('@');
 
 export function git(dir, ...args) {
@@ -51,13 +54,13 @@ export function freePort() {
   });
 }
 
-// A temporary git repo holding a copy of the demo shop. Proven runs with the test-only PROVEN_KANE_BIN pointing at
+// A temporary git repo holding the fixture copy of the demo shop. Proven runs with the test-only PROVEN_KANE_BIN pointing at
 // the fake Kane; a kane-cli shim first on PATH fails loudly if anything reaches for the real Kane CLI instead.
 export async function makeRepo(t, { timeoutS = 60, maxAttempts = 4 } = {}) {
   const dir = realpathSync(mkdtempSync(join(tmpdir(), 'proven-test-')));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
-  cpSync(join(ROOT, 'demo', 'app'), join(dir, 'demo', 'app'), { recursive: true });
-  copyFileSync(join(ROOT, '.gitignore'), join(dir, '.gitignore'));
+  cpSync(join(FIXTURE_DEMO, 'app'), join(dir, 'demo', 'app'), { recursive: true });
+  copyFileSync(join(FIXTURE_DEMO, 'gitignore'), join(dir, '.gitignore'));
   mkdirSync(join(dir, '.proven'), { recursive: true });
   writeFileSync(
     join(dir, '.proven', 'config.json'),

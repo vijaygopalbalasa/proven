@@ -13,9 +13,10 @@ import { commitPaths, dirtyPaths } from '../src/git.js';
 import { readZip } from '../src/zip.js';
 import { failingScreenshot } from '../src/evidence.js';
 import { probe } from '../src/probe.js';
-import { APP_DIR } from '../demo/server.js';
 import { writeZip } from './support/zip-writer.js';
-import { freePort, git, TEST_EMAIL } from './support/helpers.js';
+import { FIXTURE_DEMO, freePort, git, TEST_EMAIL } from './support/helpers.js';
+
+const APP_DIR = join(FIXTURE_DEMO, 'app');
 import { HOME_MAC, SESSIONS } from './support/patterns.js';
 
 function tempDir(t) {
