@@ -1,0 +1,142 @@
+# Requirements: Proven
+
+## Introduction
+
+AI coding agents say a ticket is done before it is. Proven closes a ticket only on evidence from Kane CLI: the ticket's
+acceptance test is frozen before any work starts, Kane must see that test FAIL on the code as it is (red), and later
+PASS on the changed code (green), with the test unchanged in between. Every closed ticket keeps both runs in a receipt
+anyone can re-check, and a later change that breaks a closed ticket reopens it.
+
+A person writes and freezes tickets. The coding agent (a headless Claude Code session in the demo) does the work and
+calls `proven done` when it believes a ticket is finished; Kane's verdict, read by Proven, decides. Proven itself never judges pass or fail: it
+runs Kane, reads Kane's events, compares hashes and git history, and writes receipts.
+
+Measured before this spec (Kane CLI 0.10.4): a frozen 2-step test fails 3 of 3 runs on a broken page and passes 3 of 3
+on a working one; a saved test replayed with `--no-adaptive-heal` on a broken page fails; Kane leaves the test file
+unchanged and writes its recording to `output-<stem>/` next to it (no names, emails or home paths in it); after a failed
+step Kane skips the rest. With the app's server down, an "open the page" step with no check passed on the browser's
+error page and the next step failed, so an outage looked like a real failure; with a landmark check in the first step
+the first step failed instead. So Proven checks the app answers, and the first step always verifies a landmark.
+
+One rule runs through everything: any commit a lock or a receipt names must already contain what it vouches for. A
+lock or receipt is therefore written in its own commit, after the commit it names.
+
+Glossary: a ticket is T-N; its frozen test is `tickets/T-N_test.md` (Kane's test.md format, one `##` step per
+criterion); red means Kane failed the frozen test for the right reason before the change; green means Kane passed the
+same test after it; a receipt is `receipts/T-N.json`.
+
+## Requirement 1: Tickets and freeze
+**User story:** As a person handing work to an agent, I want to write a ticket in plain English and freeze its test
+before work starts, so that the agent cannot move the goalposts.
+### Acceptance criteria
+1. WHEN a person runs `proven new T-N "<title>"` THE SYSTEM SHALL create `tickets/T-N.md` holding the title, the start
+   URL, a landmark (text that must be visible on the page at the start URL) and an empty list of acceptance criteria to
+   fill in, each criterion ending in something Kane can verify on screen.
+2. WHEN a person runs `proven freeze T-N` THE SYSTEM SHALL write `tickets/T-N_test.md` whose first `##` step opens the
+   start URL and verifies the landmark, followed by one `##` step per acceptance criterion, and commit exactly the
+   ticket and the test (commit F); then write `tickets/T-N.lock.json` with the test's sha256, the ticket's sha256 and
+   F, and commit the lock alone.
+3. IF a ticket has no acceptance criteria, no start URL or no landmark THEN `proven freeze` SHALL refuse and say which
+   is missing.
+4. WHEN any command reads a frozen test THE SYSTEM SHALL compare its sha256 with the lock and with the file as it is at
+   the lock's commit, and SHALL refuse to run it when either differs.
+
+## Requirement 2: Red before work
+**User story:** As a person, I want proof that the test fails on today's code, so that a later pass means the change
+did something.
+### Acceptance criteria
+1. WHEN a person runs `proven red T-N` THE SYSTEM SHALL refuse while the app folder has uncommitted changes (so the red
+   commit holds exactly the code Kane judged), then check that the start URL answers HTTP 200 and, if it does not,
+   report "did not run: the app is not answering at <url>" and record nothing.
+2. THE SYSTEM SHALL run `kane-cli testmd run tickets/T-N_test.md --agent --headless` with its own time limit (default
+   300 s) and read Kane's NDJSON events, never Kane's human-readable text.
+3. THE SYSTEM SHALL count the run as red only WHEN Kane's `test_md_done` reports `overall_status` failed AND the first
+   step (the landmark) passed AND a later step failed (Kane skips the steps after it). It SHALL record the git commit
+   (HEAD), the first failed step's number and title, Kane's `one_liner` and `reason` for it, the run's duration and
+   credits, and the sha256 of the evidence pack Kane wrote, in `.proven/state/T-N.json`.
+4. IF Kane passes the test THEN THE SYSTEM SHALL mark the ticket "already passes: this test proves nothing yet" and
+   SHALL NOT let it be assigned until a person sharpens the criteria and freezes again.
+5. IF Kane exits 2 or 3, writes no `test_md_done`, or fails the first step (the landmark) THEN THE SYSTEM SHALL report
+   "did not run" with Kane's reason and SHALL NOT count it as red.
+6. THE files Proven commits under `.proven/state/` SHALL hold no session folder, Test Manager link, absolute path, name
+   or email.
+
+## Requirement 3: The agent's loop
+**User story:** As a person, I want the agent to hear Kane's verdict in its own loop, so that it fixes the app until
+Kane passes and cannot close the ticket any other way.
+### Acceptance criteria
+1. WHEN the agent runs `proven done T-N` on a ticket with a recorded red THE SYSTEM SHALL check the frozen test as in
+   1.4, check the app answers as in 2.1, run Kane as in 2.2, and print the verdict on stdout and stderr.
+2. WHEN Kane fails the test THE SYSTEM SHALL print the failing step's number and title, Kane's `one_liner` and
+   `reason`, the path of the failing step's screenshot in the evidence pack, and the line "Fix the app, not the test.",
+   exit with code 1, and count one attempt. After 4 failed attempts the ticket SHALL move to "needs a person".
+3. WHEN Kane did not run (as in 2.5) THE SYSTEM SHALL say so, exit with code 2, and count no attempt.
+4. WHEN Kane passes the test THE SYSTEM SHALL check that the red commit is an ancestor of HEAD and that the frozen test
+   is byte-identical to the lock, commit the app folder's changes (commit G, the code Kane just judged), then write
+   `receipts/T-N.json` naming G and commit it with Kane's recording folder for the test, mark the ticket done, print
+   "Done: red <short sha>, green <short sha>." and exit with code 0.
+5. THE SYSTEM SHALL never commit files outside the app folder, `tickets/` (including Kane's `output-<stem>/` recording,
+   which replays need), `receipts/` and `.proven/state/`, and SHALL never commit Kane's session folders or evidence
+   packs.
+
+## Requirement 4: Receipts anyone can re-check
+**User story:** As anyone reading the repository, I want to re-check a closed ticket without trusting the agent or the
+author.
+### Acceptance criteria
+1. THE receipt SHALL record the ticket id and title, the frozen test's sha256 and its commit F, the red run (commit,
+   failing step, Kane's reason, evidence sha256, Kane CLI version), the green run (commit G, steps passed, evidence
+   sha256, Kane CLI version), the sha256 of Kane's recording folder at green, and its own sha256 over a canonical JSON
+   of everything else.
+2. WHEN anyone runs `proven verify receipts/T-N.json` THE SYSTEM SHALL check, with git and no network, the receipt's own
+   hash, that the frozen test at the lock commit matches the recorded sha256, that the red commit is an ancestor of the
+   green commit, and that the frozen test did not change between them, and SHALL print CONFIRMED and exit 0, or
+   MISMATCH with each failed check and exit 1.
+3. WHEN `--replay` is given and Kane CLI is signed in THE SYSTEM SHALL serve the app as it was at the red commit and
+   check that Kane fails the frozen test there for the recorded step, then serve it as it was at the green commit and
+   check that Kane passes, and report both verdicts. This re-checks the red itself, not only the green.
+
+## Requirement 5: Reopen on regression
+**User story:** As a person, I want a closed ticket to reopen when later work breaks it, so that done stays done.
+### Acceptance criteria
+1. WHEN a person or the agent runs `proven recheck` THE SYSTEM SHALL replay the frozen test of every done ticket with
+   `--no-adaptive-heal`.
+2. IF a replay fails THEN THE SYSTEM SHALL confirm with one fresh authoring run before acting, and only a confirmed
+   failure SHALL move the ticket to "reopened", keep the failing step and Kane's reason, and require a new green through
+   `proven done`.
+
+## Requirement 6: The board
+**User story:** As a person (and a judge), I want to see every ticket's evidence at a glance.
+### Acceptance criteria
+1. WHEN a person runs `proven board` THE SYSTEM SHALL serve a local web page, with no build step and no dependencies to
+   install, showing each ticket's state (frozen, red, in progress, done, reopened, needs a person) with its red and
+   green evidence in plain words.
+2. THE board SHALL update without a reload when a command changes a ticket.
+3. THE board SHALL show done only for a ticket whose receipt verifies as in 4.2.
+
+## Requirement 7: Guard rails for the agent
+**User story:** As a person, I want the agent unable to edit tickets, tests, locks or receipts, or to freeze or record
+red itself.
+### Acceptance criteria
+1. WHEN a person runs `proven init` THE SYSTEM SHALL write Claude Code project hooks (`.claude/settings.json`, a
+   PreToolUse hook) that block Write and Edit calls on paths under `tickets/`, `receipts/` and `.proven/` and Bash
+   commands that run `proven new`, `proven freeze` or `proven red`, and a section in `CLAUDE.md` that tells the agent
+   to run `proven done T-N` when it believes a ticket is done and to fix the app, never the test.
+2. THE README SHALL say plainly that the guard rails are not a sandbox, and that done is shown only for a receipt that
+   verifies.
+
+## Requirement 8: Demo, judge mode and honesty
+### Acceptance criteria
+1. THE repository SHALL hold a small demo shop under `demo/app/`, served by a script that sends `Cache-Control:
+   no-store`, and at least three demo tickets, one of which a later ticket's change breaks, so that `recheck` reopens
+   it. The demo's bugs SHALL NOT be announced in comments or text on the page, because Kane reads the page.
+2. WHEN a judge runs `npm start` without a Kane login THE SYSTEM SHALL show the board with the committed receipts and
+   say that new runs need `kane-cli login`.
+3. THE README SHALL state the limits: receipts are tamper-evident for hashed files, not signed by Kane; Kane's verdicts
+   can be flaky, which is why red needs a failing last step and a passing landmark; evidence packs are not committed
+   because they carry the runner's name and email.
+4. THE project SHALL use Node.js 22 or newer and no runtime dependencies.
+
+## Build order
+Build Requirements 1 to 4 against `demo/app/` first and stop: the first gate is one ticket going red, the agent fixing
+it, the ticket going green and a receipt that `proven verify` confirms, twice, with no hand edits. Requirements 5 to 8
+come after that gate.

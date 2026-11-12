@@ -1,0 +1,7 @@
+# Kane CLI writes runner details (name, email) into evidence packs and session folders: never commit them.
+.testmuai/
+**/output-*/evidence/
+*.evidence
+.proven/runs/
+node_modules/
+.DS_Store
