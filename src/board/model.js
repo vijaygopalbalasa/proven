@@ -76,7 +76,7 @@ export function ticketCard(root, id) {
     title: parseTicket(ticketText, id).title || '(no title)',
     state: 'new',
     label: LABELS.new,
-    note: `A person fills in ${p.ticket} and runs proven freeze ${id}.`,
+    note: `Written, not frozen yet. When ${p.ticket} is ready, a person runs proven freeze ${id}.`,
     problem: null,
     frozen_commit: null,
     max_attempts: null,

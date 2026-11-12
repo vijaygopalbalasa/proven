@@ -50,7 +50,7 @@ test('the board shows each ticket\'s state with its red and green evidence', asy
   assert.equal(t1.note, 'Done, but this receipt was not made with Kane CLI.');
   assert.equal(card(model, 'T-2').red.step, 2);
   assert.equal(card(model, 'T-2').green, null);
-  assert.match(card(model, 'T-3').note, /A person fills in tickets\/T-3\.md and runs proven freeze T-3\./);
+  assert.match(card(model, 'T-3').note, /^Written, not frozen yet\. When tickets\/T-3\.md is ready, a person runs proven freeze T-3\.$/);
   assert.deepEqual(model.counts, { done: 1, red: 1, new: 1 });
 
   // A failed attempt, then a Kane run in progress, which the board shows while it lasts.
