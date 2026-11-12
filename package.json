@@ -8,6 +8,7 @@
     "proven": "bin/proven.js"
   },
   "scripts": {
+    "start": "node bin/proven.js board --judge",
     "test": "node --test test/*.test.js",
     "demo": "node demo/server.js"
   },
