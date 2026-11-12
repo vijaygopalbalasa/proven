@@ -1,0 +1,17 @@
+{
+  "name": "proven",
+  "version": "0.1.0",
+  "private": true,
+  "description": "AI agent tickets close only on Kane CLI evidence: red before the change, green after it, on the same frozen test.",
+  "type": "module",
+  "bin": {
+    "proven": "bin/proven.js"
+  },
+  "scripts": {
+    "test": "node --test test/*.test.js",
+    "demo": "node demo/server.js"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}
