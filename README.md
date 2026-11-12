@@ -62,7 +62,10 @@ While it runs it prints, naming the ticket on every line, each attempt as `prove
 Kane's verdict, the failing step and Kane's one-liner), and one short line per agent tool call (the tool and the file
 or command, about 100 characters at most, never file contents or tool results).
 
-The agent command is in `.proven/agent.json`, an optional file: `{ "command": ["claude", "-p", ...] }`. Without it
+The agent command is in `.proven/agent.json`, an optional file. Because a cloned repository could ship its own, `proven
+loop` prints the command and refuses (exit 2) unless you pass `--agent-config`, each time. It also always refuses a
+command with `--dangerously-skip-permissions`, `--allow-dangerously-skip-permissions` or `--permission-mode
+bypassPermissions`. The file looks like: `{ "command": ["claude", "-p", ...] }`. Without it
 Proven runs `claude -p --model claude-sonnet-5-5 --permission-mode acceptEdits --allowedTools "Bash(node bin/proven.js
 done *)" --output-format stream-json --verbose`. The command is a list of words that is run without a shell, with the
 prompt as the last word. It is not in `.proven/config.json` and no lock pins it, so receipts verify as before.
@@ -87,7 +90,8 @@ recheck reopened a ticket, 2 something did not run.
 - `.claude/hooks/proven-guard.mjs`, run by a PreToolUse hook in `.claude/settings.json` before every Write, Edit,
   MultiEdit, NotebookEdit and Bash call. It blocks changes under `tickets/` (where Kane also keeps its recordings),
   `receipts/`, `.proven/` and `.claude/`, and the commands `proven new`, `proven freeze`, `proven red` and `proven loop`,
-  which are a person's steps. From the shell it fails closed: a command that writes files (`cp`, `mv`, `ln`, `rsync`, `mkdir`,
+  which are a person's steps. It blocks a `proven` command that has any of those words among its arguments (so
+  `--port 8090 red` does not hide one), and an `npm run` script in `package.json` that runs one. From the shell it fails closed: a command that writes files (`cp`, `mv`, `ln`, `rsync`, `mkdir`,
   `rm`, `dd`, `tar`, `sed -i`, `find -delete` and others, also behind `env`, `sudo`, `timeout` or `xargs`) is blocked
   when any of its arguments points there, as are `>`, `tee` and inline code (`node -e`, `python -c`) that names those
   folders. It exits with code 2 and says why on stderr, which Claude Code shows to the agent. It is defence in depth:

@@ -14,9 +14,22 @@ export function defaultAgentCommand() {
   ];
 }
 
+// The flag in an agent command that turns Claude Code's permission checks off, or null. Proven never runs such a command.
+export function bypassFlag(cmd) {
+  for (let i = 0; i < cmd.length; i++) {
+    const w = cmd[i];
+    if (w.startsWith('--dangerously-skip-permissions') || w.startsWith('--allow-dangerously-skip-permissions')) return w;
+    if (/^--permission-mode=bypasspermissions$/i.test(w)) return w;
+    if (w === '--permission-mode' && /^bypasspermissions$/i.test(cmd[i + 1] ?? '')) return `${w} ${cmd[i + 1]}`;
+  }
+  return null;
+}
+
+// { command, fromFile }. A command from .proven/agent.json comes from the repository, which may be someone else's, so
+// proven loop runs it only when the person passes --agent-config.
 export function loadAgentCommand(root) {
   const file = join(root, AGENT_PATH);
-  if (!existsSync(file)) return defaultAgentCommand();
+  if (!existsSync(file)) return { command: defaultAgentCommand(), fromFile: false };
   let user;
   try {
     user = JSON.parse(readFileSync(file, 'utf8'));
@@ -31,7 +44,7 @@ export function loadAgentCommand(root) {
   if (!Array.isArray(cmd) || !cmd.length || !cmd.every((w) => typeof w === 'string' && w) ) {
     throw new Refusal(`${AGENT_PATH}: "command" must be a list of words, the program first, for example ["claude", "-p"]. It is run without a shell.`);
   }
-  return cmd;
+  return { command: cmd, fromFile: true };
 }
 
 // Does this command ask the agent for stream-json output?

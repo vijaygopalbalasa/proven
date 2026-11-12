@@ -254,7 +254,7 @@ test('loop: an agent.json from the repository is not run without --agent-config,
   assert.equal(r.code, 2, r.stdout + r.stderr);
   const text = r.stdout + '\n' + r.stderr;
   assert.ok(text.includes(JSON.stringify([process.execPath, FAKE_AGENT, '--output-format', 'stream-json'])), text);
-  assert.match(text, /\.proven\/agent\.json names the agent command above.*--agent-config/);
+  assert.match(text, /\.proven\/agent\.json names the agent command .*Nothing was run.*--agent-config/);
   assert.equal(agentCalls(repo).length, 0);
   assert.equal(repo.json('.proven/state/T-1.json').status, 'red');
   // with the flag it runs, and says which command it uses

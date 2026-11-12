@@ -9,7 +9,7 @@
 // arguments points into those folders, whichever argument the command would write to. It is defence in depth, not a
 // sandbox: an agent with a shell can still get around it. That is why Proven shows a ticket as done only for a
 // receipt that verifies.
-import { existsSync, realpathSync } from 'node:fs';
+import { existsSync, readFileSync, realpathSync } from 'node:fs';
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
@@ -165,12 +165,40 @@ function programIndex(words, matches) {
   return words.findIndex((w, j) => j > i && matches(w));
 }
 
-// The person's step a simple command runs (new, freeze, red or loop), or null.
+// The person's step a simple command runs (new, freeze, red or loop), or null. Fail closed: a proven command with any
+// word that is a person's step is blocked, wherever the word stands, because a value flag (--port 8090 red) would make
+// "the first word after proven" the wrong one to read.
 export function personStep(words) {
   const at = programIndex(words, isProven);
   if (at < 0) return null;
-  const step = words.slice(at + 1).find((w) => !w.startsWith('-'));
-  return PERSON_STEPS.includes(step) ? step : null;
+  return words.slice(at + 1).find((w) => PERSON_STEPS.includes(w)) ?? null;
+}
+
+const PACKAGE_RUNNERS = new Set(['npm', 'pnpm', 'yarn', 'bun']);
+
+// A person's step that an npm, pnpm, yarn or bun script in package.json runs, when the command names that script
+// (also its pre and post scripts, and scripts that run other scripts). Returns the step or null.
+export function scriptStep(words, projectDir, depth = 0) {
+  const at = programIndex(words, (w) => PACKAGE_RUNNERS.has(basename(w)));
+  if (at < 0 || depth > 4) return null;
+  let scripts;
+  try {
+    scripts = JSON.parse(readFileSync(join(projectDir, 'package.json'), 'utf8')).scripts;
+  } catch {
+    return null;
+  }
+  if (!scripts || typeof scripts !== 'object') return null;
+  for (const w of words.slice(at + 1)) {
+    if (w.startsWith('-')) continue;
+    for (const name of [w, `pre${w}`, `post${w}`]) {
+      if (typeof scripts[name] !== 'string') continue;
+      for (const inner of shellParts(scripts[name]).commands) {
+        const step = personStep(inner) ?? scriptStep(inner, projectDir, depth + 1);
+        if (step) return step;
+      }
+    }
+  }
+  return null;
 }
 
 // Every path an argument could name: the word itself, the value after an =, and for an option word every tail of it,
@@ -213,7 +241,7 @@ function inlineCodeArea(words) {
 function bashVerdict(command, where, depth = 0) {
   const { commands, targets } = shellParts(command);
   for (const words of commands) {
-    const step = personStep(words);
+    const step = personStep(words) ?? scriptStep(words, where.projectDir);
     if (step) return `Proven: proven ${step} is a person's step, not the agent's. Work on the app. ${DONE_HINT}`;
     const shell = programIndex(words, (w) => SHELLS.has(basename(w)));
     if (shell >= 0 && depth < 3) {

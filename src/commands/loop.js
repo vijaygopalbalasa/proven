@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process';
-import { loadAgentCommand, wantsStreamJson } from '../agent.js';
+import { bypassFlag, loadAgentCommand, wantsStreamJson, AGENT_PATH } from '../agent.js';
 import { Refusal } from '../errors.js';
 import { changedPaths, fileAt, git, head, short } from '../git.js';
 import { readLock } from '../lock.js';
@@ -218,10 +218,20 @@ const OPEN = new Set(['red', 'in-progress', 'reopened']);
 // proven loop [T-N ...]: hand each red, in progress or reopened ticket to the coding agent, one at a time, then
 // recheck, and hand back what the recheck reopens, for at most 2 rounds. Exit 0 all done and the last recheck passes,
 // 1 a ticket needs a person, the agent stopped without a green or the last recheck reopened one, 2 something did not run.
-export async function cmdLoop(ctx, ids) {
+export async function cmdLoop(ctx, ids, flags = {}) {
   const { root, out } = ctx;
   ids.forEach(checkId);
-  const cmd = loadAgentCommand(root);
+  const { command: cmd, fromFile } = loadAgentCommand(root);
+  const bypass = bypassFlag(cmd);
+  if (bypass) throw new Refusal(`proven loop refuses an agent command that skips permission checks (${bypass}). Proven never runs one.`);
+  if (fromFile) {
+    if (!flags['agent-config']) {
+      throw new Refusal(
+        `${AGENT_PATH} names the agent command ${JSON.stringify(cmd)}, and the repository may not be yours. Nothing was run. If you wrote it or trust it, run proven loop again with --agent-config.`,
+      );
+    }
+    out.say(`Using the agent command from ${AGENT_PATH}: ${JSON.stringify(cmd)}`);
+  }
   const streamJson = wantsStreamJson(cmd);
   const named = ids.length > 0;
 
