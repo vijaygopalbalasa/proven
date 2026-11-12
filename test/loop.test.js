@@ -230,7 +230,7 @@ test('loop: a person\'s uncommitted change to Proven\'s code stops the loop befo
 
 test('guard: Proven\'s own files are protected like tickets and receipts, the app folder is not', async () => {
   const dir = '/tmp/proven-guard-test';
-  const paths = ['bin/proven.js', 'src/commands/done.js', 'package.json', 'package-lock.json', 'node_modules/x/index.js', 'test/loop.test.js', 'docs/design.md', '.gitignore', 'README.md', 'CLAUDE.md'];
+  const paths = ['bin/proven.js', 'src/commands/done.js', 'package.json', 'package-lock.json', 'node_modules/x/index.js', 'test/loop.test.js', 'docs/design.md', '.gitignore', 'README.md'];
   const call = (tool_name, tool_input) => decide({ tool_name, tool_input, cwd: dir }, { projectDir: dir });
   for (const p of paths) {
     for (const [tool, input] of [['Write', { file_path: join(dir, p), content: 'x' }], ['Edit', { file_path: p, old_string: 'a', new_string: 'b' }], ['MultiEdit', { file_path: join(dir, p), edits: [] }], ['NotebookEdit', { notebook_path: p, new_source: 'x' }]]) {

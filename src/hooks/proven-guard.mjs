@@ -13,7 +13,12 @@ import { existsSync, realpathSync } from 'node:fs';
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
-export const PROTECTED = ['tickets', 'receipts', '.proven', '.claude'];
+// Tickets, receipts, Proven's state and these guard rails, and Proven's own code and files: the agent runs
+// proven done as the judge, so it must not be able to change the judge. Names are lowercase (compared without case).
+export const PROTECTED = [
+  'tickets', 'receipts', '.proven', '.claude',
+  'bin', 'src', 'package.json', 'package-lock.json', 'node_modules', 'test', 'docs', '.gitignore', 'readme.md',
+];
 export const PERSON_STEPS = ['new', 'freeze', 'red', 'loop'];
 // Programs that run another program named later on the line.
 const WRAPPERS = new Set([
@@ -32,7 +37,7 @@ const EDITORS = new Set(['sed', 'gsed', 'perl']);
 const INTERPRETERS = new Set(['node', 'deno', 'bun', 'python', 'python3', 'perl', 'ruby', 'php', 'osascript']);
 const ASSIGNMENT = /^[A-Za-z_][A-Za-z0-9_]*=/;
 // A protected folder named as a path segment inside code or text.
-const MENTION = /(^|[\s'"`(=,:/])(tickets|receipts|\.proven|\.claude)(\/|\\|$|[\s'"`),;])/i;
+const MENTION = new RegExp(`(^|[\\s'"\`(=,:/])(${PROTECTED.map((x) => x.replace(/[.]/g, '\\.')).join('|')})(\\/|\\\\|$|[\\s'"\`),;])`, 'i');
 
 const WHY = {
   tickets: 'Tickets, their frozen tests and locks are a person\'s. Fix the app, not the test.',
@@ -40,6 +45,8 @@ const WHY = {
   '.proven': 'Proven writes its own state there.',
   '.claude': 'That folder holds these guard rails.',
 };
+const OWN = 'That is part of Proven itself, which judges the ticket, so the agent does not change it.';
+for (const name of PROTECTED) WHY[name] ??= OWN;
 const DONE_HINT = 'When you believe a ticket is done, run proven done T-N and wait for Kane.';
 
 // A path with symlinks resolved in the part of it that exists.
