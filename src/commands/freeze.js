@@ -78,7 +78,8 @@ export async function cmdFreeze({ root, config, out }, [id]) {
   assertOnlyPaths(root, l.commit, [p.lock]);
 
   out.say(`Frozen ${id}: ticket and test in ${short(f.commit)}, lock in ${short(l.commit)}.`);
-  out.say(`${p.test} has ${ticket.criteria.length + 1} steps: the landmark check, then ${ticket.criteria.length} criteria.`);
+  const n = ticket.criteria.length;
+  out.say(`${p.test} has ${n + 1} steps: the landmark check, then ${n} ${n === 1 ? 'criterion' : 'criteria'}.`);
   out.say(`Next: start the app, then run proven red ${id}`);
   return 0;
 }

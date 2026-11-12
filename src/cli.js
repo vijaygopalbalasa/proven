@@ -42,12 +42,15 @@ export function parseArgs(argv) {
 
 export function makeOut({ stdout = process.stdout, stderr = process.stderr } = {}) {
   const line = (stream, s) => stream.write(String(s).endsWith('\n') ? String(s) : String(s) + '\n');
+  // Verdicts go to stdout and stderr, so an agent or hook that reads only one still sees them.
+  // When both streams are the same terminal, a person would see it twice, so it is printed once.
+  const sameTerminal = Boolean(stdout.isTTY && stderr.isTTY);
   return {
     say: (s) => line(stdout, s),
     warn: (s) => line(stderr, s),
     both: (s) => {
       line(stdout, s);
-      line(stderr, s);
+      if (!sameTerminal) line(stderr, s);
     },
     progress: (s) => line(stderr, s),
   };
