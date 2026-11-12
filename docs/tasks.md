@@ -43,9 +43,12 @@ Build order from the requirements: Requirements 1 to 4 first, then the gate, the
 
 - [x] 4.3 `verify --replay` serves the app at the red and green commits and replays the frozen test; MISMATCH when a
       side disagrees, "replay skipped" with the reason when Kane did not run
-- [x] 5 `proven recheck` replays done tickets with `--no-adaptive-heal`, confirms a failure with one `--author` run,
-      and reopens in a state commit of its own; `done` closes a reopened ticket with a receipt that links the earlier
-      one, and `verify` checks the link and the earlier receipt
+- [x] 5 `proven recheck` runs done tickets' tests again, fresh (recording set aside, `--author`, `--no-adaptive-heal`),
+      confirms a failure with a second fresh run, and reopens in a state commit of its own; `done` closes a reopened
+      ticket with a receipt that links the earlier one, and `verify` checks the link and the earlier receipt
+- [x] Security review: no recording decides a verdict (set aside, `--author`, summary and output-folder checks); every
+      red names the app tree at its commit; a receipt after a reopen asks for `--replay`; the board answers only
+      loopback Host and Origin on 127.0.0.1; the guard fails closed on shell writes and wrappers
 - [x] 6 `proven board`: a local page with no build step, live over server-sent events, done only for receipts that
       verify
 - [x] 7 `proven init`: the PreToolUse guard, the Bash time limits and the `CLAUDE.md` section, merged without

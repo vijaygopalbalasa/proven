@@ -19,7 +19,7 @@ export const USAGE = `proven: a ticket closes only when Kane CLI saw it fail bef
   proven verify receipts/T-N.json    re-check a receipt with git only
   proven verify receipts/T-N.json --replay
                                      and run Kane again with the app at red (must fail) and at green (must pass)
-  proven recheck [T-N ...]           replay every done ticket; reopen one whose failure a fresh run confirms
+  proven recheck [T-N ...]           run every done ticket's test again; reopen one whose failure a second run confirms
   proven init                        write Claude Code guard rails: a PreToolUse hook and a CLAUDE.md section
   proven board [--port 8090] [--judge]
                                      a local page with every ticket's evidence, updated live

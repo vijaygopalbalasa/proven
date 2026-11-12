@@ -38,7 +38,7 @@ claude -p --model claude-sonnet-5-5 --permission-mode acceptEdits \
   --allowedTools "Bash(node bin/proven.js done *)" \
   "Ticket T-3 is red. Read tickets/T-3.md and make it true in demo/app. When you believe it is done, run node bin/proven.js done T-3 and follow what it prints."
 
-node bin/proven.js recheck                # replays every done ticket; T-3's change broke T-1, so T-1 reopens
+node bin/proven.js recheck                # runs every done ticket's test again; T-3's change broke T-1, so T-1 reopens
 claude -p --model claude-sonnet-5-5 --permission-mode acceptEdits \
   --allowedTools "Bash(node bin/proven.js done *)" \
   "proven recheck reopened T-1. Read tickets/T-1.md and .proven/state/T-1.json for what Kane saw, fix demo/app, then run node bin/proven.js done T-1 and follow what it prints."
@@ -121,7 +121,7 @@ It listens on 127.0.0.1 only and answers only requests addressed to localhost, s
 | `proven red T-N` | person | Kane must fail the frozen test on the code as it is, for the right reason |
 | `proven done T-N` | agent | Kane decides. A pass commits the change and the receipt |
 | `proven verify receipts/T-N.json [--replay]` | anyone | re-checks a receipt with git, and with `--replay` with Kane at red and green |
-| `proven recheck [T-N ...]` | person or agent | replays done tickets and reopens one whose failure a fresh run confirms |
+| `proven recheck [T-N ...]` | person or agent | runs done tickets' tests again and reopens one whose failure a second run confirms |
 | `proven board [--port 8090] [--judge]` | anyone | the local board |
 | `proven init` | person | the Claude Code guard rails |
 
@@ -159,7 +159,7 @@ pinned when a ticket is frozen.
 - The app must be static files for now, because Proven serves its own snapshot of the app folder while Kane runs, and
   the start URL must be local with a port, like http://localhost:8091/.
 - Kane's verdicts can be flaky. That is why red needs a passing landmark and a failing later step, why anything unclear
-  counts as "did not run", and why recheck confirms a failed replay with a fresh run before it reopens anything.
+  counts as "did not run", and why recheck confirms a failure with a second fresh run before it reopens anything.
 - Evidence packs are not committed, because they carry the runner's name and email. Proven keeps only their sha256.
 - Kane's recording folder (`tickets/output-T-N/`) stays local, because it carries Kane account and session ids, and
   it is never used for a verdict. So every run authors every step: a minute or two and about 10 to 30 credits each.
@@ -168,6 +168,8 @@ pinned when a ticket is frozen.
   the test fake, not against live Kane.
 - `--author` comes from Kane CLI 0.10.4's own help ("re-author every step"); it has not run live yet. If Kane ever
   rejected it, every run would say "did not run", so nothing could pass by mistake.
+- A file in Kane's output folder that someone else changes while Kane runs cannot be told apart by its time. Against
+  that, Proven relies on `--author` and on Kane's own summary showing no replayed step.
 - `recheck` judges the app as committed and refuses while the app folder has uncommitted changes.
 - The tests use a fake Kane through the `PROVEN_KANE_BIN` variable. Every run made that way says so in the output, the
   state and the receipt, and `verify` flags such a receipt.

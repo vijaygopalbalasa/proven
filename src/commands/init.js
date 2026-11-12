@@ -39,7 +39,7 @@ records red: Kane failing the test on the code as it was. Your job is the app in
 - Fix the app, never the test. After ${maxAttempts} failed attempts the ticket needs a person, so stop there.
 - Do not edit anything under \`tickets/\`, \`receipts/\`, \`.proven/\` or \`.claude/\`, and do not run
   \`proven new\`, \`proven freeze\` or \`proven red\`. Those are a person's steps, and a hook blocks them.
-- \`${proven} recheck\` replays every done ticket. A ticket it reopens needs a new \`${proven} done T-N\`.
+- \`${proven} recheck\` runs every done ticket's test again. A ticket it reopens needs a new \`${proven} done T-N\`.
   Its state in \`.proven/state/T-N.json\` says which step failed and what Kane saw.
 ${SECTION_END}
 `;
