@@ -189,8 +189,10 @@ taken from the reopen. `red` and `freeze` refuse a reopened ticket.
 ## The board (6)
 
 `proven board [--port 8090] [--judge]` serves one HTML page (no build step, no dependencies, nothing loaded from the
-network) on the loopback addresses only, plus `/api/board`, `/events` (server-sent events) and
-`/receipts/T-N.json` (the receipt as committed). The model reads only committed state: the lock and state at HEAD,
+network) on 127.0.0.1 only, plus `/api/board`, `/events` (server-sent events) and
+`/receipts/T-N.json` (the receipt as committed). Against DNS rebinding, a request whose Host is not
+`localhost`, `127.0.0.1` or `[::1]` with the board's port gets 421, and one with any other Origin gets 403. The model
+reads only committed state: the lock and state at HEAD,
 trusted only when Proven's own commits wrote them and the red record checks out, and done only when the receipt
 verifies with git; otherwise the card says needs a person and why. Each second the server compares a cheap key
 (HEAD, the ticket files, the `active.json` files) and, when it changed, builds the model again and pushes it if it

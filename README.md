@@ -18,7 +18,7 @@ git history, and writes a receipt that anyone can re-check. A later change that 
 
 ```
 npm test       # every command, end to end, on a fake Kane: no login needed
-npm start      # judge mode: the board over the receipts committed here, at http://localhost:8090/
+npm start      # judge mode: the board over the receipts committed here, at http://127.0.0.1:8090/
 ```
 
 Run `npm link` once to call Proven as `proven`. The commands below use `node bin/proven.js`, which works without it.
@@ -29,7 +29,7 @@ The demo shop is in `demo/app/`. Tickets T-1 and T-2 are already closed with rea
 waiting: marketing put a new code in `demo/app/coupons.json`, and the cart ignores that file.
 
 ```
-node bin/proven.js board                  # second terminal: the board at http://localhost:8090/, live
+node bin/proven.js board                  # second terminal: the board at http://127.0.0.1:8090/, live
 node bin/proven.js freeze T-3             # a person freezes the ticket's test
 node bin/proven.js red T-3                # Kane must fail it on the shop as it is: red
 
@@ -108,6 +108,7 @@ and app tree Kane judged, the failing step, Kane's reason and the evidence hash.
 red, in progress, done, reopened, needs a person) with its evidence in plain words. Red shows Kane's own one-liner and
 a "Failed before the change" stamp; green shows "Passed after", the commits, the credits and the receipt. It updates
 live over server-sent events when a commit changes a ticket, and shows done only for a receipt that verifies with git.
+It listens on 127.0.0.1 only and answers only requests addressed to localhost, so another web page cannot read it.
 
 ## Commands
 

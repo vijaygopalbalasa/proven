@@ -19,7 +19,10 @@ function listen(server, port, host) {
 
 // Requirement 6: a local page with no build step. It reads only committed state, and the page updates itself over
 // server-sent events whenever a commit (or a Kane run starting or ending) changes what it shows.
-export async function startBoard(root, { port = 8090, hosts = ['127.0.0.1', '::1'], judge = false, pollMs = 1000 } = {}) {
+// It listens on 127.0.0.1 only, and answers only requests addressed to this machine by a loopback name: a web page on
+// another name that resolves here (DNS rebinding) sends that name as Host and gets 421, and a request from another
+// page's origin gets 403.
+export async function startBoard(root, { port = 8090, hosts = ['127.0.0.1'], judge = false, pollMs = 1000 } = {}) {
   const page = readFileSync(PAGE);
   let model = boardModel(root, { judge });
   let body = JSON.stringify(model);
@@ -30,7 +33,14 @@ export async function startBoard(root, { port = 8090, hosts = ['127.0.0.1', '::1
     res.writeHead(status, { 'Content-Type': type, 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' });
     res.end(data);
   };
+  const names = () => [`localhost:${bound}`, `127.0.0.1:${bound}`, `[::1]:${bound}`];
   const handler = (req, res) => {
+    const host = String(req.headers.host ?? '').toLowerCase();
+    if (!names().includes(host)) return send(res, 421, 'This board answers only to localhost.', 'text/plain; charset=utf-8');
+    const origin = req.headers.origin;
+    if (origin !== undefined && !names().some((n) => `http://${n}` === String(origin).toLowerCase())) {
+      return send(res, 403, 'Forbidden', 'text/plain; charset=utf-8');
+    }
     const url = new URL(req.url, 'http://board');
     if (req.method !== 'GET') return send(res, 405, 'Method not allowed', 'text/plain; charset=utf-8');
     if (url.pathname === '/') return send(res, 200, page, 'text/html; charset=utf-8');
@@ -50,7 +60,7 @@ export async function startBoard(root, { port = 8090, hosts = ['127.0.0.1', '::1
     return send(res, 404, 'Not found', 'text/plain; charset=utf-8');
   };
 
-  // Every loopback address localhost can mean, on one port. Nothing outside this machine can reach the board.
+  // Loopback only: nothing outside this machine can reach the board.
   const servers = [];
   const closeServers = () =>
     Promise.all(

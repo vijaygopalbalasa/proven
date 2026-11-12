@@ -3,7 +3,10 @@ import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { request } from 'node:http';
+import { connect } from 'node:net';
 import { boardModel } from '../src/board/model.js';
+import { startBoard } from '../src/board/server.js';
 import { couponTicket, fixCoupon, freePort, greenRepo, makeRepo, PROVEN } from './support/helpers.js';
 
 const card = (model, id) => model.tickets.find((t) => t.id === id);
@@ -159,7 +162,7 @@ test('proven board serves the page and updates it live over server-sent events w
     });
     board.once('exit', () => fail(new Error(`the board stopped: ${printed}`)));
   });
-  assert.match(printed, new RegExp(`^Board: http://localhost:${port}/ {2}\\(Ctrl\\+C to stop\\)$`, 'm'));
+  assert.match(printed, new RegExp(`^Board: http://127\\.0\\.0\\.1:${port}/ {2}\\(Ctrl\\+C to stop\\)$`, 'm'));
   assert.match(printed, /New Kane runs \(proven red, proven done, proven verify --replay\) need Kane CLI .* and kane-cli login\./);
   const base = `http://127.0.0.1:${port}`;
 
@@ -200,4 +203,52 @@ test('proven board serves the page and updates it live over server-sent events w
   const exited = new Promise((done) => board.once('exit', (code) => done(code)));
   board.kill('SIGTERM');
   assert.equal(await exited, 0);
+});
+
+// One raw request, so the test can send any Host and Origin header.
+function raw(port, path, headers, { setHost = true } = {}) {
+  return new Promise((done, fail) => {
+    const req = request({ host: '127.0.0.1', port, path, headers, setHost }, (res) => {
+      res.resume();
+      res.on('end', () => done(res.statusCode));
+    });
+    req.on('error', fail);
+    req.end();
+  });
+}
+
+test('the board answers only to localhost: another Host gets 421 and another Origin gets 403', async (t) => {
+  const repo = await makeRepo(t);
+  const board = await startBoard(repo.dir, { port: 0 });
+  t.after(() => board.close());
+  const port = board.port;
+  for (const host of [`localhost:${port}`, `127.0.0.1:${port}`, `[::1]:${port}`, `LOCALHOST:${port}`]) {
+    assert.equal(await raw(port, '/', { Host: host }), 200, host);
+  }
+  // A page on another name that resolves to this machine (DNS rebinding) sends its own name as Host.
+  for (const host of [`evil.example:${port}`, `localhost:${port + 1}`, 'localhost', `127.0.0.1.nip.example:${port}`]) {
+    assert.equal(await raw(port, '/api/board', { Host: host }), 421, host);
+  }
+  // With no Host header at all, Node's HTTP server refuses the request itself (400), before the board sees it.
+  assert.equal(await raw(port, '/', {}, { setHost: false }), 400, 'no Host header');
+  for (const origin of ['http://evil.example', `http://localhost:${port + 1}`, `https://localhost:${port}`, 'null']) {
+    assert.equal(await raw(port, '/events', { Host: `localhost:${port}`, Origin: origin }), 403, origin);
+  }
+  assert.equal(await raw(port, '/api/board', { Host: `127.0.0.1:${port}`, Origin: `http://127.0.0.1:${port}` }), 200);
+  assert.equal(await raw(port, '/api/board', { Host: `localhost:${port}`, Origin: `http://localhost:${port}` }), 200);
+});
+
+test('the board listens on 127.0.0.1 only', async (t) => {
+  const repo = await makeRepo(t);
+  const board = await startBoard(repo.dir, { port: 0 });
+  t.after(() => board.close());
+  const reached = await new Promise((done) => {
+    const socket = connect({ host: '::1', port: board.port });
+    socket.once('connect', () => {
+      socket.destroy();
+      done(true);
+    });
+    socket.once('error', () => done(false));
+  });
+  assert.equal(reached, false);
 });
