@@ -30,14 +30,15 @@ export function git(dir, ...args) {
   return execFileSync('git', args, { cwd: dir, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
 }
 
-export function runProven(cwd, args, env = {}) {
+export function runProven(cwd, args, env = {}, bin = PROVEN) {
+  bin ||= PROVEN;
   const fullEnv = { ...process.env };
   for (const [k, v] of Object.entries(env)) {
     if (v === undefined) delete fullEnv[k];
     else fullEnv[k] = v;
   }
   return new Promise((done) => {
-    execFile(process.execPath, [PROVEN, ...args], { cwd, env: fullEnv, maxBuffer: 16 * 1024 * 1024 }, (err, stdout, stderr) => {
+    execFile(process.execPath, [bin, ...args], { cwd, env: fullEnv, maxBuffer: 16 * 1024 * 1024 }, (err, stdout, stderr) => {
       done({ code: err ? (typeof err.code === 'number' ? err.code : 1) : 0, stdout, stderr });
     });
   });
@@ -88,7 +89,7 @@ export async function makeRepo(t, { timeoutS = 60, maxAttempts = 4 } = {}) {
     log,
     // realKane: true leaves PROVEN_KANE_BIN unset, so Proven would reach for kane-cli (the shim).
     // scenario is one fake Kane scenario, or a list for a command that runs Kane more than once (in order).
-    run: (args, { scenario, env, realKane = false } = {}) => {
+    run: (args, { scenario, env, realKane = false, proven } = {}) => {
       rmSync(counter, { force: true });
       return runProven(dir, args, {
         PROVEN_KANE_BIN: realKane ? undefined : FAKE_KANE,
@@ -97,7 +98,7 @@ export async function makeRepo(t, { timeoutS = 60, maxAttempts = 4 } = {}) {
         FAKE_KANE_LOG: log,
         PATH: `${shim}:${process.env.PATH}`,
         ...env,
-      });
+      }, proven);
     },
     git: (...args) => git(dir, ...args),
     read: (rel) => readFileSync(join(dir, rel), 'utf8'),

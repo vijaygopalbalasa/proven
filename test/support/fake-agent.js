@@ -30,6 +30,46 @@ if (process.env.FAKE_AGENT_MODE === 'tamper-src' || process.env.FAKE_AGENT_MODE 
   }
 }
 
+// More tampering modes. Each does its damage first, then (unless it quits) works as normal.
+const mode = process.env.FAKE_AGENT_MODE;
+const sh = (cmd, args) => spawnSync(cmd, args, { encoding: 'utf8' });
+const STATE = `.proven/state/${id}.json`;
+if (mode === 'rewrite-restore') {
+  // Changes the loop's recheck code on disk during the session and puts it back before exiting.
+  const file = process.env.FAKE_AGENT_TAMPER_FILE;
+  const original = readFileSync(file, 'utf8');
+  const changed = original.replace("'Every done ticket still passes.'", "'TAMPERED RECHECK'");
+  if (changed === original) throw new Error('marker not found');
+  writeFileSync(file, changed);
+  process.on('exit', () => writeFileSync(file, original));
+}
+if (mode === 'ignored-file') writeFileSync('src/.DS_Store', 'ignored by .gitignore, but it is in src');
+if (mode === 'git-config') appendFileSync('.git/config', '[alias]\n\tx = !true\n');
+if (mode === 'git-exclude') appendFileSync('.git/info/exclude', 'src/\n');
+if (mode === 'skip-worktree') {
+  sh('git', ['update-index', '--skip-worktree', 'src/commands/done.js']);
+}
+if (mode === 'forge-red') {
+  const state = JSON.parse(readFileSync(STATE, 'utf8'));
+  state.red.kane_reason = 'invented by the agent';
+  writeFileSync(STATE, JSON.stringify(state, null, 2) + '\n');
+  sh('git', ['commit', '-q', '-m', `${id}: attempt 1 failed at step 2`, '--', STATE]);
+  process.exit(0);
+}
+if (mode === 'forge-done') {
+  const state = JSON.parse(readFileSync(STATE, 'utf8'));
+  state.status = 'done';
+  writeFileSync(STATE, JSON.stringify(state, null, 2) + '\n');
+  sh('git', ['commit', '-q', '-m', `${id}: receipt, red 0000000, green 1111111`, '--', STATE]);
+  process.exit(0);
+}
+if (mode === 'other-ticket') {
+  writeFileSync('.proven/state/T-2.json', '{}\n');
+  sh('git', ['add', '-f', '.proven/state/T-2.json']);
+  sh('git', ['commit', '-q', '-m', 'T-2: attempt 1 failed at step 2', '--', '.proven/state/T-2.json']);
+  process.exit(0);
+}
+
 const tries = Number(process.env.FAKE_AGENT_TRIES ?? 6);
 for (let n = 1; n <= tries; n++) {
   const file = 'demo/app/styles.css';

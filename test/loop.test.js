@@ -1,9 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync, existsSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { readFileSync, existsSync, mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { decide, personStep } from '../src/hooks/proven-guard.mjs';
+import { cpSync } from 'node:fs';
 import { couponTicket, makeRepo, PROVEN, ROOT } from './support/helpers.js';
 import { findCommittedLeaks } from './support/scan.js';
 
@@ -52,8 +53,9 @@ test('loop: a red ticket the agent fixes on its second attempt, one Kane fail fe
   assert.equal(r.code, 0, r.stdout + r.stderr);
   assert.match(r.stdout, /^T-1: starting the agent \(1 of 1\)\.$/m);
   assert.match(r.stdout, /^T-1 attempt 1 of 4: Kane failed step 2 \(Apply SAVE10\)\. Kane says: The cart accepts SAVE10/m);
-  assert.match(r.stdout, /^T-1 attempt 2 of 4: Kane passed\.$/m);
-  assert.match(r.stdout, /^T-1 is done: receipt verifies\.$/m);
+  assert.match(r.stdout, /^T-1 attempt 2 of 4: Kane passed in proven done \(not yet confirmed\)\.$/m);
+  assert.match(r.stdout, /^T-1 is done: confirmed by a fresh Kane run from proven loop\.$/m);
+  assert.doesNotMatch(r.stdout, /is done: receipt verifies/);
   assert.match(r.stdout, /^T-1 still passes/m);
   assert.match(r.stdout, /^Loop finished: every ticket is done and the last recheck passes\.$/m);
   // one agent session, with the red prompt, and the state it worked from
@@ -215,7 +217,7 @@ for (const mode of ['tamper-src', 'commit-src']) {
     assert.equal(r.code, 1, r.stdout + r.stderr);
     const text = r.stdout + '\n' + r.stderr;
     assert.match(text, /^Proven's own files changed during the agent's session: .*src\/commands\/done\.js.*\. Nothing from this session is trusted\.$/m);
-    assert.doesNotMatch(text, /is done: receipt verifies|Rechecking|Loop finished|Handing back/);
+    assert.doesNotMatch(text, /is done|Rechecking|Loop finished|Handing back/);
     assert.equal(agentCalls(repo).length, 1);
   });
 }
@@ -309,4 +311,80 @@ test('guard: a value flag or a later word cannot hide a person\'s step', async (
   for (const command of ['npm run fine', 'node bin/proven.js done T-1', 'node bin/proven.js board --port 8090', 'npm test', 'echo red', 'grep -rn "proven red" README.md']) {
     assert.equal(call(command), null, command);
   }
+});
+
+test('loop: the recheck and verify run from code loaded before the session, even if the agent rewrites and restores it', async (t) => {
+  const copy = mkdtempSync(join(tmpdir(), 'proven-copy-'));
+  t.after(() => rmSync(copy, { recursive: true, force: true }));
+  cpSync(join(ROOT, 'bin'), join(copy, 'bin'), { recursive: true });
+  cpSync(join(ROOT, 'src'), join(copy, 'src'), { recursive: true });
+  writeFileSync(join(copy, 'package.json'), readFileSync(join(ROOT, 'package.json')));
+  const bin = join(copy, 'bin', 'proven.js');
+  const recheckFile = join(copy, 'src', 'commands', 'recheck.js');
+  const original = readFileSync(recheckFile, 'utf8');
+  const repo = await redRepo(t);
+  const r = await repo.run(['loop', '--agent-config'], {
+    scenario: ['green', 'green'],
+    proven: bin,
+    env: agentEnv(repo, { FAKE_AGENT_MODE: 'rewrite-restore', FAKE_AGENT_TAMPER_FILE: recheckFile, FAKE_AGENT_PROVEN: bin }),
+  });
+  assert.equal(r.code, 0, r.stdout + r.stderr);
+  assert.equal(readFileSync(recheckFile, 'utf8'), original, 'the agent restored the file');
+  assert.match(r.stdout, /^Every done ticket still passes\.$/m);
+  assert.doesNotMatch(r.stdout + r.stderr, /TAMPERED RECHECK/);
+  assert.match(r.stdout, /^T-1 is done: confirmed by a fresh Kane run from proven loop\.$/m);
+});
+
+test('loop: a ticket is not reported done when the recheck cannot confirm it', async (t) => {
+  const repo = await redRepo(t);
+  const r = await repo.run(['loop', '--agent-config'], { scenario: ['green', 'not-started'], env: agentEnv(repo) });
+  assert.equal(r.code, 2, r.stdout + r.stderr);
+  assert.match(r.stdout, /Kane passed in proven done \(not yet confirmed\)/);
+  assert.doesNotMatch(r.stdout, /is done: confirmed/);
+  assert.match(r.stdout + r.stderr, /^T-1 is not confirmed: the fresh Kane run did not complete\.$/m);
+});
+
+for (const [mode, what, re] of [
+  ['ignored-file', 'an ignored file in src/', /src\/\.DS_Store/],
+  ['git-config', '.git/config', /\.git\/config/],
+  ['git-exclude', '.git/info/exclude', /\.git\/info\/exclude/],
+  ['skip-worktree', 'a skip-worktree flag', /src\/commands\/done\.js/],
+]) {
+  test(`loop: ${what} changed during the session, so nothing from it is trusted`, async (t) => {
+    const repo = await redRepo(t);
+    const r = await repo.run(['loop', '--agent-config'], { scenario: ['green', 'green'], env: agentEnv(repo, { FAKE_AGENT_MODE: mode }) });
+    assert.equal(r.code, 1, r.stdout + r.stderr);
+    const text = r.stdout + '\n' + r.stderr;
+    assert.match(text, /^Proven's own files changed during the agent's session: .*\. Nothing from this session is trusted\.$/m);
+    assert.match(text, re);
+    assert.doesNotMatch(text, /is done|Rechecking|Loop finished/);
+  });
+}
+
+for (const [mode, what] of [
+  ['forge-red', 'a state commit that rewrites the red record'],
+  ['forge-done', 'a state commit that says done with no receipt'],
+  ['other-ticket', 'a commit for a ticket that was not handed to the agent'],
+]) {
+  test(`loop: ${what} is refused`, async (t) => {
+    const repo = await redRepo(t);
+    const r = await repo.run(['loop', '--agent-config'], { scenario: ['green', 'green'], env: agentEnv(repo, { FAKE_AGENT_MODE: mode }) });
+    assert.equal(r.code, 1, r.stdout + r.stderr);
+    const text = r.stdout + '\n' + r.stderr;
+    assert.match(text, /Nothing from this session is trusted\./);
+    assert.doesNotMatch(text, /is done|Rechecking|Loop finished/);
+  });
+}
+
+test('guard: .git is protected, so the agent cannot change config, hooks or refs', async () => {
+  const dir = '/tmp/proven-guard-test';
+  const call = (tool_name, tool_input) => decide({ tool_name, tool_input, cwd: dir }, { projectDir: dir });
+  for (const p of ['.git/config', '.git/hooks/pre-commit', '.git/info/exclude', '.git/refs/heads/main', '.git/HEAD']) {
+    assert.match(call('Write', { file_path: join(dir, p), content: 'x' }) ?? '', /which the agent does not change/, p);
+    assert.match(call('Edit', { file_path: p, old_string: 'a', new_string: 'b' }) ?? '', /\.git\//, p);
+    for (const command of [`echo x >> ${p}`, `cp /tmp/x ${p}`, `sed -i s/a/b/ ${p}`, `rm ${p}`]) assert.match(call('Bash', { command }) ?? '', /Proven: /, command);
+  }
+  assert.equal(call('Bash', { command: 'git log --oneline' }), null);
+  assert.equal(call('Bash', { command: 'git status' }), null);
+  assert.equal(call('Write', { file_path: join(dir, '.gitignore-not-really', 'x'), content: 'x' }), null);
 });
