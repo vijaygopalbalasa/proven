@@ -246,7 +246,7 @@ test('guard: Proven\'s own files are protected like tickets and receipts, the ap
   }
   assert.match(call('Write', { file_path: join(dir, 'Src', 'x.js'), content: 'x' }) ?? '', /src\//i, 'case-insensitive');
   assert.equal(call('Write', { file_path: join(dir, 'demo', 'app', 'cart.js'), content: 'x' }), null);
-  assert.equal(call('Bash', { command: 'sed -i s/a/b/ demo/app/cart.js' }), null);
+  assert.match(call('Bash', { command: 'sed -i s/a/b/ demo/app/cart.js' }) ?? '', /Proven: /, 'the agent edits the app with its edit tools');
   assert.equal(call('Bash', { command: 'node bin/proven.js done T-1' }), null);
 });
 
@@ -286,9 +286,9 @@ test('loop: a command that skips Claude Code permissions is refused, flag or not
   }
 });
 
-test('guard: a value flag or a later word cannot hide a person\'s step', async () => {
+test('guard: a value flag or a later word cannot hide a person\'s step, and package scripts are not run', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'proven-guard-scripts-'));
-  writeFileSync(join(dir, 'package.json'), JSON.stringify({ scripts: { redo: 'node bin/proven.js red T-3', nested: 'npm run redo', fine: 'node bin/proven.js done T-1', prefreeze: 'proven freeze T-1', freeze: 'echo hi' } }));
+  writeFileSync(join(dir, 'package.json'), JSON.stringify({ scripts: { redo: 'node bin/proven.js red T-3', fine: 'node bin/proven.js done T-1' } }));
   const call = (command) => decide({ tool_name: 'Bash', tool_input: { command }, cwd: dir }, { projectDir: dir });
   for (const command of [
     'node bin/proven.js --port 8090 red T-3',
@@ -298,19 +298,13 @@ test('guard: a value flag or a later word cannot hide a person\'s step', async (
     'node bin/proven.js --landmark Cart new T-4 "x"',
     'npx proven --foo bar loop',
     'env X=1 proven --landmark x red',
-    'npm run redo',
-    'npm run-script redo',
-    'npm run nested',
-    'pnpm run redo',
-    'yarn redo',
-    'npm run --silent redo',
-    'npm freeze',
   ]) {
     assert.match(call(command) ?? '', /is a person's step, not the agent's\./, command);
   }
-  for (const command of ['npm run fine', 'node bin/proven.js done T-1', 'node bin/proven.js board --port 8090', 'npm test', 'echo red', 'grep -rn "proven red" README.md']) {
-    assert.equal(call(command), null, command);
+  for (const command of ['npm run redo', 'npm run-script redo', 'pnpm run redo', 'yarn redo', 'npm run fine', 'npm test', 'cd sub && npm run redo', 'npm --prefix sub run redo']) {
+    assert.match(call(command) ?? '', /Proven: /, command);
   }
+  for (const command of ['node bin/proven.js done T-1', 'echo red', 'grep -rn "proven red" README.md']) assert.equal(call(command), null, command);
 });
 
 test('loop: the recheck and verify run from code loaded before the session, even if the agent rewrites and restores it', async (t) => {

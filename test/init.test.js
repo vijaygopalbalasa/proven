@@ -188,28 +188,21 @@ test('the hook blocks writes to tickets, receipts, .proven and .claude, and a pe
     assert.match(r.stderr, /When you believe a ticket is done, run proven done T-N and wait for Kane\./);
   }
 
+  // Bash is an allowlist now (see guard-allowlist.test.js): the agent reads, edits the app with its edit tools and
+  // runs proven done, so commands that write, run other programs or recheck are no longer in this list.
   const allowed = [
     ['Write', { file_path: join(dir, 'demo', 'app', 'cart.js'), content: 'fixed' }],
     ['Edit', { file_path: join(dir, 'CLAUDE.md'), old_string: 'a', new_string: 'b' }],
     ['Write', { file_path: join(tmpdir(), 'proven-elsewhere.txt'), content: 'x' }],
     ['Read', { file_path: join(dir, 'tickets', 'T-1_test.md') }],
     ['Bash', { command: 'node bin/proven.js done T-1', timeout: 600000 }],
-    ['Bash', { command: 'proven recheck' }],
-    ['Bash', { command: 'proven verify receipts/T-1.json --replay' }],
     ['Bash', { command: 'cat tickets/T-1.md .proven/state/T-1.json' }],
     ['Bash', { command: 'grep -rn "proven freeze" docs README.md' }],
     ['Bash', { command: 'echo proven red' }],
     ['Bash', { command: 'git log --oneline -- .proven/state tickets' }],
-    ['Bash', { command: 'npm test > test-output.txt 2>&1' }],
     ['Bash', { command: 'node bin/proven.js done T-1 2>&1 | tail -5' }],
-    ['Bash', { command: 'cat tickets/T-1.md > /tmp/proven-copy.md' }],
     ['Bash', { command: 'grep -rn "cp" demo/app' }],
-    ['Bash', { command: 'timeout 600 node bin/proven.js done T-1' }],
-    ['Bash', { command: 'env CI=1 npm test' }],
-    ['Bash', { command: 'node -e "console.log(1 + 1)"' }],
-    ['Bash', { command: 'mkdir -p demo/app/img && touch demo/app/img/logo.svg && rm demo/app/old.js' }],
     ['Bash', { command: "sed -n '1,5p' tickets/T-1_test.md" }],
-    ['Bash', { command: 'tar -tf recording.tar' }],
   ];
   for (const [tool, input] of allowed) {
     const r = runGuard(dir, hookInput(dir, tool, input));

@@ -9,7 +9,7 @@
 // arguments points into those folders, whichever argument the command would write to. It is defence in depth, not a
 // sandbox: an agent with a shell can still get around it. That is why Proven shows a ticket as done only for a
 // receipt that verifies.
-import { existsSync, readFileSync, realpathSync } from 'node:fs';
+import { existsSync, realpathSync } from 'node:fs';
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
@@ -175,33 +175,6 @@ export function personStep(words) {
   return words.slice(at + 1).find((w) => PERSON_STEPS.includes(w)) ?? null;
 }
 
-const PACKAGE_RUNNERS = new Set(['npm', 'pnpm', 'yarn', 'bun']);
-
-// A person's step that an npm, pnpm, yarn or bun script in package.json runs, when the command names that script
-// (also its pre and post scripts, and scripts that run other scripts). Returns the step or null.
-export function scriptStep(words, projectDir, depth = 0) {
-  const at = programIndex(words, (w) => PACKAGE_RUNNERS.has(basename(w)));
-  if (at < 0 || depth > 4) return null;
-  let scripts;
-  try {
-    scripts = JSON.parse(readFileSync(join(projectDir, 'package.json'), 'utf8')).scripts;
-  } catch {
-    return null;
-  }
-  if (!scripts || typeof scripts !== 'object') return null;
-  for (const w of words.slice(at + 1)) {
-    if (w.startsWith('-')) continue;
-    for (const name of [w, `pre${w}`, `post${w}`]) {
-      if (typeof scripts[name] !== 'string') continue;
-      for (const inner of shellParts(scripts[name]).commands) {
-        const step = personStep(inner) ?? scriptStep(inner, projectDir, depth + 1);
-        if (step) return step;
-      }
-    }
-  }
-  return null;
-}
-
 // Every path an argument could name: the word itself, the value after an =, and for an option word every tail of it,
 // so a value bundled into short options (cp -vtDIR, tar -xzCDIR) is seen too.
 function pathsIn(word) {
@@ -239,16 +212,16 @@ function inlineCodeArea(words) {
   return null;
 }
 
-function bashVerdict(command, where, depth = 0) {
+function denyVerdict(command, where, depth = 0) {
   const { commands, targets } = shellParts(command);
   for (const words of commands) {
-    const step = personStep(words) ?? scriptStep(words, where.projectDir);
+    const step = personStep(words);
     if (step) return `Proven: proven ${step} is a person's step, not the agent's. Work on the app. ${DONE_HINT}`;
     const shell = programIndex(words, (w) => SHELLS.has(basename(w)));
     if (shell >= 0 && depth < 3) {
       const k = words.indexOf('-c', shell);
       if (k > 0 && words[k + 1]) {
-        const inner = bashVerdict(words[k + 1], where, depth + 1);
+        const inner = denyVerdict(words[k + 1], where, depth + 1);
         if (inner) return inner;
       }
     }
@@ -259,6 +232,169 @@ function bashVerdict(command, where, depth = 0) {
   for (const t of targets) {
     const area = protectedArea(t, where);
     if (area) return `Proven: this command writes to ${t}, under ${area}/, which the agent does not change. ${WHY[area]} ${DONE_HINT}`;
+  }
+  return null;
+}
+
+
+// ---- The allowlist -------------------------------------------------------------------------------------------------
+// A Bash command is allowed only when every segment of it (split on | && || ; and newlines) is proven done for one
+// ticket, a program that only reads, or a read-only git subcommand. Everything else is blocked: substitution,
+// redirection to a file, cd, assignments, and every program that is not listed. The denylist above runs first only to
+// give a precise reason; this is what decides. It is defence in depth, not a sandbox.
+const READ_ONLY = new Set(['cat', 'head', 'tail', 'ls', 'wc', 'grep', 'rg', 'find', 'sed', 'awk', 'sort', 'uniq', 'diff', 'jq', 'echo', 'pwd', 'file', 'stat', 'tree']);
+const GIT_READ = new Set(['log', 'show', 'diff', 'status', 'rev-parse', 'ls-files', 'blame', 'grep', 'cat-file', 'branch']);
+const ALLOWED_REDIRECTS = new Set(['2>&1', '2>/dev/null', '>/dev/null']);
+const DOLLAR = /[A-Za-z_{(0-9@*#?!$-]/;
+const ALLOW_HINT = 'The agent may only read files, edit the app with its edit tools, and run proven done.';
+
+// Splits a command into segments of words, or says why it cannot be read safely.
+function segmentsOf(s) {
+  const segments = [];
+  let words = [];
+  let word = '';
+  let inWord = false;
+  let start = 0;
+  const endWord = () => {
+    if (inWord) words.push(word);
+    word = '';
+    inWord = false;
+  };
+  const endSegment = (i) => {
+    endWord();
+    if (words.length) segments.push({ words, text: s.slice(start, i).trim() });
+    words = [];
+    start = i + 1;
+  };
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i];
+    if (c === "'") {
+      const j = s.indexOf("'", i + 1);
+      if (j < 0) return { problem: 'an unterminated quote' };
+      word += s.slice(i + 1, j);
+      inWord = true;
+      i = j;
+    } else if (c === '"') {
+      let j = i + 1;
+      for (; j < s.length && s[j] !== '"'; j++) {
+        if (s[j] === '\\' && j + 1 < s.length) word += s[++j];
+        else if (s[j] === '`' || (s[j] === '$' && DOLLAR.test(s[j + 1] ?? ''))) return { problem: 'command substitution or expansion' };
+        else word += s[j];
+      }
+      if (j >= s.length) return { problem: 'an unterminated quote' };
+      inWord = true;
+      i = j;
+    } else if (c === '\\') {
+      if (i + 1 < s.length && s[i + 1] !== '\n') {
+        word += s[++i];
+        inWord = true;
+      } else i++;
+    } else if (c === ' ' || c === '\t') endWord();
+    else if (c === '\n' || c === ';') endSegment(i);
+    else if (c === '|') {
+      if (s[i + 1] === '|') i++;
+      endSegment(i);
+    } else if (c === '&') {
+      if (s[i + 1] !== '&') return { problem: 'a background or combined redirect (&)' };
+      i++;
+      endSegment(i);
+    } else if (c === '>') {
+      let fd = '';
+      if (inWord && /^\d+$/.test(word)) {
+        fd = word;
+        word = '';
+        inWord = false;
+      } else endWord();
+      let j = i + 1;
+      const append = s[j] === '>';
+      if (append) j++;
+      let target = '';
+      if (s[j] === '&') {
+        target = '&';
+        for (j++; /\d/.test(s[j] ?? ''); j++) target += s[j];
+      } else {
+        while (s[j] === ' ' || s[j] === '\t') j++;
+        for (; j < s.length && !/[\s;|&<>()]/.test(s[j]); j++) target += s[j];
+      }
+      const text = `${fd}>${append ? '>' : ''}${target}`;
+      if (!ALLOWED_REDIRECTS.has(text)) return { problem: `the redirection ${text}` };
+      i = j - 1;
+    } else if (c === '<') return { problem: 'input redirection, a heredoc or process substitution' };
+    else if (c === '(' || c === ')' || c === '`') return { problem: 'a subshell, process or command substitution' };
+    else if (c === '$' && DOLLAR.test(s[i + 1] ?? '')) return { problem: 'command substitution or expansion' };
+    else {
+      word += c;
+      inWord = true;
+    }
+  }
+  endSegment(s.length);
+  return { segments };
+}
+
+const shortOpt = (w, letters) => /^-[^-]/.test(w) && [...w.slice(1)].some((x) => letters.includes(x));
+
+// Why a segment is not allowed, or null.
+function segmentProblem(words) {
+  const [name, ...args] = words;
+  if (ASSIGNMENT.test(name)) return 'it sets an environment variable';
+  if (name === 'node' || name === 'proven') {
+    const form = name === 'node' ? ['bin/proven.js', './bin/proven.js'].includes(args[0]) && args[1] === 'done' && args.length === 3 : args[0] === 'done' && args.length === 2;
+    return form && /^T-\d+$/.test(args.at(-1)) ? null : 'only proven done T-N is allowed';
+  }
+  if (name === 'git') {
+    const sub = args[0];
+    if (!GIT_READ.has(sub)) return 'only read-only git subcommands are allowed (log, show, diff, status, rev-parse, ls-files, blame, grep, cat-file, branch --list)';
+    const rest = args.slice(1);
+    if (sub === 'branch' && !rest.every((w) => ['--list', '-l', '-a', '-r', '-v', '--all', '--remotes'].includes(w))) return 'git branch is allowed only with no arguments or --list';
+    if (rest.some((w) => w.startsWith('--output') || w === '--ext-diff' || w === '-O' || w.startsWith('-O') || w.startsWith('--open-files-in-pager'))) return 'that git option writes a file or runs a program';
+    return null;
+  }
+  if (!READ_ONLY.has(name)) return `${name} is not a read-only program on the list`;
+  if (name === 'find' && args.some((w) => /^-(exec|execdir|ok|okdir|delete|fprint|fprint0|fprintf|fls)$/.test(w))) return 'find may not run programs, delete or write files';
+  if (name === 'sort' && args.some((w) => shortOpt(w, 'oT') || /^--(output|compress-program|temporary-directory)/.test(w))) return 'sort may not write a file or run a program';
+  if (name === 'tree' && args.some((w) => shortOpt(w, 'o') || w.startsWith('--output') || w.startsWith('--fromfile'))) return 'tree may not write a file';
+  if (name === 'file' && args.some((w) => shortOpt(w, 'C'))) return 'file may not write a file';
+  if (name === 'rg' && args.some((w) => w.startsWith('--pre') || w.startsWith('--hostname-bin'))) return 'rg may not run a program';
+  if (name === 'uniq' && args.filter((w) => !w.startsWith('-')).length > 1) return 'uniq with a second file writes it';
+  if (name === 'sed') {
+    let quiet = false;
+    const scripts = [];
+    const files = [];
+    for (let i = 0; i < args.length; i++) {
+      const w = args[i];
+      if (w === '--quiet' || w === '--silent') quiet = true;
+      else if (/^-[nEr]+$/.test(w)) quiet ||= w.includes('n');
+      else if (w === '-e') scripts.push(args[++i] ?? '');
+      else if (w.startsWith('--expression=')) scripts.push(w.slice(13));
+      else if (w.startsWith('-')) return 'sed is allowed only with -n and print commands';
+      else files.push(w);
+    }
+    if (!scripts.length && files.length) scripts.push(files.shift());
+    const PRINT = /^(\d+|\$|\/[^/]*\/)?(,(\d+|\$|\/[^/]*\/))?p$/;
+    if (!quiet || !scripts.length || !scripts.every((x) => PRINT.test(x.trim()))) return 'sed is allowed only with -n and print commands';
+  }
+  if (name === 'awk') {
+    const rest = [];
+    for (let i = 0; i < args.length; i++) {
+      const w = args[i];
+      if (w === '-F' || w === '-v') i++;
+      else if (/^-[Fv]./.test(w)) continue;
+      else if (w.startsWith('-')) return 'awk is allowed only with -F, -v and a program';
+      else rest.push(w);
+    }
+    if (!rest.length || /[>|@]|\bsystem\b|\bgetline\b|\bprintf?\s*\(.*\)\s*>/.test(rest[0])) return 'awk may not write files, pipe or run programs';
+  }
+  return null;
+}
+
+// The reason to block a Bash command, or null when every segment is on the list.
+export function allowVerdict(command) {
+  const text = String(command ?? '');
+  const { segments, problem } = segmentsOf(text);
+  if (problem) return `Proven: this command is blocked because it has ${problem}: ${text.trim().slice(0, 200)}. ${ALLOW_HINT} ${DONE_HINT}`;
+  for (const { words, text: seg } of segments) {
+    const why = segmentProblem(words);
+    if (why) return `Proven: this command is blocked at the segment "${seg.slice(0, 200)}": ${why}. ${ALLOW_HINT} ${DONE_HINT}`;
   }
   return null;
 }
@@ -275,7 +411,7 @@ export function decide(input, { projectDir }) {
     if (area) return `Proven: ${path} is under ${area}/, which the agent does not change. ${WHY[area]} ${DONE_HINT}`;
     return null;
   }
-  if (tool === 'Bash') return bashVerdict(args.command, where);
+  if (tool === 'Bash') return denyVerdict(args.command, where) ?? allowVerdict(args.command);
   return null;
 }
 

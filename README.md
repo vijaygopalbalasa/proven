@@ -93,8 +93,14 @@ recheck reopened a ticket, 2 something did not run.
 - `.claude/hooks/proven-guard.mjs`, run by a PreToolUse hook in `.claude/settings.json` before every Write, Edit,
   MultiEdit, NotebookEdit and Bash call. It blocks changes under `tickets/` (where Kane also keeps its recordings),
   `receipts/`, `.proven/` and `.claude/`, and the commands `proven new`, `proven freeze`, `proven red` and `proven loop`,
-  which are a person's steps. It blocks a `proven` command that has any of those words among its arguments (so
-  `--port 8090 red` does not hide one), and an `npm run` script in `package.json` that runs one. From the shell it fails closed: a command that writes files (`cp`, `mv`, `ln`, `rsync`, `mkdir`,
+  which are a person's steps. Bash is an allowlist: a command is allowed only
+  if every segment (split on `|`, `&&`, `||`, `;` and newlines) is `proven done T-N`, a read-only program (`cat`, `head`,
+  `tail`, `ls`, `wc`, `grep`, `rg`, `find` without `-exec` or `-delete`, `sed -n` with print commands, `awk` without
+  output, `sort`, `uniq`, `diff`, `jq`, `echo`, `pwd`, `file`, `stat`, `tree`) or a read-only `git` subcommand (`log`,
+  `show`, `diff`, `status`, `rev-parse`, `ls-files`, `blame`, `grep`, `cat-file`, `branch --list`). Everything else is
+  blocked, including command substitution, redirection to a file, `cd`, variable assignments, `npm`, `node` (other
+  than the done command), `python`, `sh -c` and `curl`. The agent reads files, edits the app with its edit tools, and
+  runs `proven done`. This is defence in depth, not a sandbox. From the shell it fails closed: a command that writes files (`cp`, `mv`, `ln`, `rsync`, `mkdir`,
   `rm`, `dd`, `tar`, `sed -i`, `find -delete` and others, also behind `env`, `sudo`, `timeout` or `xargs`) is blocked
   when any of its arguments points there, as are `>`, `tee` and inline code (`node -e`, `python -c`) that names those
   folders. It exits with code 2 and says why on stderr, which Claude Code shows to the agent. It is defence in depth:
