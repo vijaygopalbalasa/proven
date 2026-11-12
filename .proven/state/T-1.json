@@ -1,0 +1,20 @@
+{
+  "ticket": "T-1",
+  "frozen_commit": "75b602402eecb37c05e9f68789b5de9518b3faac",
+  "status": "red",
+  "attempts": 0,
+  "red": {
+    "commit": "0c82fa03fb8ab4766957eedeb25c5e963db9aabd",
+    "failed_step": 2,
+    "failed_step_title": "Apply SAVE10",
+    "kane_one_liner": "The test expected SAVE10 to reduce the total, but the store rejected that code and kept the total at $30.00.",
+    "kane_reason": "SAVE10 was applied but the cart reports “That code is not valid” and retains a $30.00 total.",
+    "duration_s": 57,
+    "credits": 29.37,
+    "evidence_sha256": "839a52e7267c62569d91918cbea114153465894d5dbc9c0564d2c3bce4e50b43",
+    "kane": "kane-cli",
+    "kane_cli": "0.10.4",
+    "app_tree": "d6006651d796bfe735335813f75458b11576b534",
+    "at": "2026-11-12T21:47:07.286Z"
+  }
+}
