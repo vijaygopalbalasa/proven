@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process';
 import { loadAgentCommand, wantsStreamJson } from '../agent.js';
 import { Refusal } from '../errors.js';
-import { fileAt, git, head } from '../git.js';
+import { changedPaths, fileAt, git, head, short } from '../git.js';
 import { readLock } from '../lock.js';
 import { receiptCommitAtHead, verifyReceipt } from '../receipt.js';
 import { loadState, statusOf } from '../state.js';
@@ -130,10 +130,16 @@ function runAgent(ctx, id, cmd, prompt, streamJson) {
   });
 }
 
-// One agent session for one ticket. Returns 'done', 'needs-a-person', 'stopped' or 'not-run'.
+// One agent session for one ticket. Returns 'done', 'needs-a-person', 'stopped', 'tampered' or 'not-run'.
 async function session(ctx, id, i, n, cmd, streamJson) {
   const { root, out } = ctx;
   const { status } = readStatus(root, id);
+  const before = head(root);
+  const dirty = changedOwn(root, OWN_PATHS);
+  if (dirty.length) {
+    out.both(`did not run: ${dirty.join(', ')} (Proven's own files) have uncommitted changes, so the loop could not tell the agent's changes from yours. Commit or restore them first.`);
+    return 'not-run';
+  }
   out.say(`${id}: starting the agent (${i} of ${n}).`);
   const result = await runAgent(ctx, id, cmd, status === 'reopened' ? reopenedPrompt(id) : redPrompt(id), streamJson);
   if (result.notStarted) {
@@ -144,6 +150,11 @@ async function session(ctx, id, i, n, cmd, streamJson) {
         : `did not run: the agent program ${cmd[0]} could not start (${result.notStarted.message}).`,
     );
     return 'not-run';
+  }
+  const tampered = sessionTampering(ctx, before);
+  if (tampered.length) {
+    out.both(`Proven's own files changed during the agent's session: ${tampered.join(', ')}. Nothing from this session is trusted.`);
+    return 'tampered';
   }
   const after = readStatus(root, id);
   if (after.status === 'done') {
@@ -163,6 +174,43 @@ async function session(ctx, id, i, n, cmd, streamJson) {
   const how = result.signal ? `signal ${result.signal}` : `exit code ${result.code}`;
   out.both(`${id}: the agent stopped without a green (${how}).${after.why ? ' ' + after.why : ''}`);
   return 'stopped';
+}
+
+// Proven's own code and guard rails. The agent runs proven done as the judge, so a change here would change the judge.
+const OWN_PATHS = ['bin', 'src', 'package.json', 'package-lock.json', '.claude', 'test', '.proven/config.json'];
+
+// Files under Proven's own paths or tickets/ that differ from HEAD in the working tree or index, or are new and not
+// ignored. A path that is not there is simply not listed.
+function changedOwn(root, paths) {
+  const lines = (args) => (git(root, args, { allowFail: true }) ?? '').split('\0').filter(Boolean);
+  return [...new Set([...lines(['diff', '--name-only', '-z', 'HEAD', '--', ...paths]), ...lines(['ls-files', '--others', '--exclude-standard', '-z', '--', ...paths])])];
+}
+
+// Is this a commit proven done (or its attempt record) makes: the app tree Kane judged, a state file, or a receipt
+// with the state? Returns the paths that make it something else, or [].
+function foreignPaths(root, config, commit) {
+  const subject = git(root, ['log', '-1', '--format=%s', commit]).trim();
+  const paths = changedPaths(root, commit);
+  const id = /^(T-[1-9][0-9]*): /.exec(subject)?.[1];
+  if (!id || !paths.length) return paths.length ? paths : [`commit ${short(commit)}`];
+  const p = ticketPaths(id);
+  const app = (x) => x.startsWith(config.app + '/');
+  const shaped =
+    (subject === `${id}: app change that Kane passed` && paths.every(app)) ||
+    (paths.length === 1 && paths[0] === p.state) ||
+    (subject.startsWith(`${id}: receipt`) && paths.every((x) => x === p.state || x === p.receipt));
+  return shaped ? [] : paths.length ? paths : [`commit ${short(commit)}`];
+}
+
+// After an agent session: Proven's code, the guard rails and the tickets are as they were, and every commit made
+// meanwhile is one that proven done makes. Returns the paths that say otherwise.
+function sessionTampering(ctx, before) {
+  const { root, config } = ctx;
+  const bad = changedOwn(root, [...OWN_PATHS, 'tickets']);
+  const commits = (git(root, ['rev-list', '--reverse', `${before}..HEAD`], { allowFail: true }) ?? '').split('\n').filter(Boolean);
+  if (head(root) !== before && git(root, ['merge-base', '--is-ancestor', before, 'HEAD'], { allowFail: true }) === null) bad.push('history was rewritten');
+  for (const c of commits) bad.push(...foreignPaths(root, config, c));
+  return [...new Set(bad)];
 }
 
 const OPEN = new Set(['red', 'in-progress', 'reopened']);
@@ -208,6 +256,7 @@ export async function cmdLoop(ctx, ids) {
     for (const [k, id] of pending.entries()) {
       const result = await session(ctx, id, k + 1, pending.length, cmd, streamJson);
       if (result === 'not-run') return 2;
+      if (result === 'tampered') return 1;
       if (result !== 'done') stopped = true;
     }
     if (stopped) {

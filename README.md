@@ -68,7 +68,13 @@ done *)" --output-format stream-json --verbose`. The command is a list of words 
 prompt as the last word. It is not in `.proven/config.json` and no lock pins it, so receipts verify as before.
 
 What it does not do: it does not write tickets, freeze tests or record red (the guard blocks the agent from running
-`proven loop` too). It does not raise the attempt limit: a ticket that needs a person stops there, and so does an agent
+`proven loop` too). The guard also blocks the agent from writing to Proven's own code and files (`bin/`, `src/`,
+`package.json`, `node_modules/`, `test/`, `docs/`, `.gitignore`, `README.md`), so the agent's only writable area is the
+app folder. After every agent session `proven loop` checks git: `bin/`, `src/`, `package.json`, `.claude/`, `test/` and
+`tickets/` must be unchanged, and every commit made during the session must be one that `proven done` makes (the app
+tree Kane judged, a state file, a receipt). If not, it prints "Proven's own files changed during the agent's session",
+trusts nothing from that session, runs no recheck and exits 1. A person's uncommitted change to those files stops the
+loop before it starts. This is a check, not a sandbox. It does not raise the attempt limit: a ticket that needs a person stops there, and so does an agent
 that exits without a green. It does not decide anything: Kane's result through `proven done` and `proven recheck` is
 the only verdict. If the agent program is not on PATH it says "did not run" and exits 2. Exit codes: 0 every ticket it
 handled is done and the last recheck passes, 1 a ticket needs a person, the agent stopped without a green or the last
@@ -182,7 +188,10 @@ pinned when a ticket is frozen.
   like Proven's, a state file, a receipt). The stronger check is `verify --replay`, where Kane itself runs the frozen
   test again at red and at green.
 - Receipts are tamper-evident for the files they hash. Kane does not sign them.
-- The guard rails are not a sandbox, which is why done is shown only for a receipt that verifies.
+- The guard rails are not a sandbox, which is why done is shown only for a receipt that verifies. The guard blocks writes
+  to Proven's own code, and `proven loop` checks git after every agent session that Proven's code and history were not
+  touched, but an agent with a shell can still try to get around both. `verify --replay` stays the strongest check,
+  because Kane itself runs the test again at red and at green.
 - The app must be static files for now, because Proven serves its own snapshot of the app folder while Kane runs, and
   the start URL must be local with a port, like http://localhost:8091/.
 - Kane's verdicts can be flaky. That is why red needs a passing landmark and a failing later step, why anything unclear
