@@ -76,24 +76,32 @@ Proven lists the changed paths and stops if any falls outside the allowed set.
 - **The frozen test (1.4).** Every run checks that the test's sha256 equals the lock's and that F holds the same
   bytes. Done also checks that the lock is unchanged since red and that no commit after red touched the test, even
   one that changed it back.
+- **The lock chain.** After F, the lock is written exactly once, in its own commit L, right on F. Red must run on L
+  itself (HEAD = L), so the code Kane fails is the code that was frozen. If HEAD has moved before red, `proven freeze`
+  locks the ticket again on the current commit (an empty F commit, then a new lock).
 - **The state.** Decisions come from the state as committed at HEAD. A working-tree copy that differs from HEAD is
   refused. Every commit that ever changed a state file must look like Proven's: the state file alone, or the receipt
-  commit. The red record must have every field, and `red.commit` must be the parent of the first state commit after
-  the lock. No later state commit may change the red record. The number of state commits since red must be the
-  attempt count plus one.
-- **The app folder.** It must hold no file that git ignores and no symlink, before Kane runs, after it runs and again
-  before G is committed, because the server could show Kane something no commit would keep. The app is fingerprinted
-  the way git stores a tree (mode, content, symlink text). A change during the run voids the run. After G is
-  committed, its tree must equal the fingerprint Kane judged.
+  commit. The red record must have every field (nothing is assumed). The first state commit after L must sit right
+  on L and record red on L, and no later state commit may change the red record. The number of state commits since
+  red must be the attempt count plus one.
+- **The app folder: Kane judges a snapshot, never the live folder.** For each run Proven writes the app folder as a
+  git tree with a temporary index (what a commit would hold: tracked and untracked files, not ignored ones), exports
+  that tree to a temporary folder and serves it itself, with `Cache-Control: no-store`, on the start URL's port for
+  the whole run. A port held by another server means did not run, with a message to stop it. The tree id is the
+  app's fingerprint. Red records it (and it must equal the app at L). On a pass, done commits exactly that tree as G,
+  built from the tree with `read-tree --prefix`, so the code judged and the code committed are the same by
+  construction. Edits made while Kane runs never reach G, and files git ignores are never served. Symlinks are
+  refused for clarity. The same export-and-serve module will serve the red and green commits for `verify --replay`.
 
 ## Running Kane
 
-`kane-cli testmd run tickets/T-N_test.md --agent --headless`, from the repo root, as its own process group. Proven
-keeps its own timer (`timeout_s`, default 300) and kills the whole group on timeout or Ctrl+C, because Kane's launcher
-ignores SIGTERM and runs the real CLI as a child. Decisions use only stdout NDJSON. Kane's stderr is shown, with
-emails and home paths masked, only as a hint when Kane did not start. Before each run Proven checks that the start URL
-answers HTTP 200 and, if not, says "did not run: the app is not answering at <url>" and records nothing. It checks
-again after the run.
+`kane-cli testmd run tickets/T-N_test.md --agent --headless`, from the repo root, as its own process group, while
+Proven serves the snapshot. Proven keeps its own timer (`timeout_s`, default 300) and kills the whole group on timeout
+or Ctrl+C, because Kane's launcher ignores SIGTERM and runs the real CLI as a child. Decisions use only stdout NDJSON.
+Kane's stderr is shown, with emails and home paths masked, only as a hint when Kane did not start. Before Kane starts,
+Proven checks that the start URL answers HTTP 200 from the snapshot and, if not, says "did not run: the app is not
+answering at <url>" and records nothing. A commit made while Kane runs voids the run. For now the app must be static
+files under the app folder, and the start URL must be local with a port (for example http://localhost:8091/).
 
 ## Classifying a run
 
@@ -108,23 +116,25 @@ again after the run.
 
 ## red, done, verify
 
-- **red** refuses a dirty app folder, runs Kane, and on a clean red commits the red record (HEAD, step, title, Kane's
-  one_liner and reason, duration, credits, evidence sha256, Kane version, which Kane). A pass records "already
+- **red** runs only on the lock commit and refuses a dirty app folder. It runs Kane, and on a clean red it commits the
+  red record (HEAD, the app tree, step, title, Kane's one_liner and reason, duration, credits, evidence sha256, Kane
+  version, which Kane). A pass records "already
   passes" and blocks the ticket until a new freeze. Exit 0 red, 1 already passes, 2 did not run.
 - **done** runs Kane on the agent's change. On a failure it prints the step, title, Kane's words, the failing
   screenshot inside the evidence pack (and a copy under `.proven/runs/`) and "Fix the app, not the test.", on stdout
   and stderr, exit 1. It counts one attempt, and the 4th failure means "needs a person". Did not run is exit 2 and
-  counts nothing. On a pass it commits G, then the receipt with Kane's recording, and prints
+  counts nothing. On a pass it commits the judged tree as G, then the receipt with Kane's recording, and prints
   "Done: red <short>, green <short>.".
 - **verify** uses git only. Paths come from the ticket id, never from the receipt. It checks:
   1. the receipt's paths match its ticket;
   2. the receipt hash matches its contents;
   3. the test and ticket at F match the receipt;
-  4. the lock, in its own commit after F, names F and pins the receipt's settings;
+  4. the lock was written once, in its own commit right on F, names F, pins the receipt's settings, and is the red
+     commit;
   5. F is an ancestor of red;
   6. red is an ancestor of G;
   7. the test did not change between red and G;
-  8. the app changed between red and G;
+  8. the app trees at red and G match the receipt, and differ;
   9. the state history shows the red record right after red, then one commit per failed attempt;
   10. the receipt is committed as it is, with Kane's recording.
 
@@ -137,14 +147,15 @@ again after the run.
 { receipt: 1, ticket, title,
   settings: { app, timeout_s, max_attempts, start_url },
   frozen:   { commit F, test, test_sha256, ticket, ticket_sha256 },
-  red:      { commit, failed_step, failed_step_title, kane_one_liner, kane_reason, evidence_sha256, kane, kane_cli, duration_s, credits },
-  green:    { commit G, steps_passed, steps_total, evidence_sha256, kane, kane_cli, duration_s, credits, failed_attempts },
+  red:      { commit, failed_step, failed_step_title, kane_one_liner, kane_reason, evidence_sha256, kane, kane_cli, duration_s, credits, app_tree },
+  green:    { commit G, steps_passed, steps_total, evidence_sha256, kane, kane_cli, duration_s, credits, failed_attempts, app_tree },
   recording:{ path, sha256 },
   receipt_sha256 }
 ```
 
 `receipt_sha256` is the sha256 of the canonical JSON (keys sorted, no spaces) of everything else. The recording
-sha256 is the sha256 of a manifest of `<sha256 of file>  <path>` lines, sorted by path.
+sha256 is the sha256 of the canonical JSON of `[path, sha256 of file]` pairs, sorted by path. The app trees are git
+tree ids. No hash is made from joined strings.
 
 ## Leak guards
 
@@ -164,7 +175,7 @@ commit, expecting the recorded failure, and at the green commit, expecting a pas
 
 `npm test` runs `node --test` and never calls the real Kane CLI. The fake Kane (`test/support/fake-kane.js`, set
 through `PROVEN_KANE_BIN`) replays scrubbed NDJSON recorded from Kane CLI 0.10.4 with the recorded exit codes. Like
-Kane, it writes the recording folder and an evidence pack, and it can hang, crash, leak private text or change the app
-mid-run. The end-to-end tests drive the whole loop in temporary git repos against the real demo server. A `kane-cli`
+Kane, it writes the recording folder and an evidence pack, fetches pages from the app Proven serves, and it can hang,
+crash, leak private text or change the app mid-run. The end-to-end tests drive the whole loop in temporary git repos against the real demo server. A `kane-cli`
 shim placed first on PATH fails loudly if anything reaches for the real CLI. Leak tests scan every blob of every
 commit, and this repository itself, for emails, home paths, Kane session data and share links.

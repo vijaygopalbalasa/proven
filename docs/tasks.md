@@ -28,9 +28,10 @@ Build order from the requirements: Requirements 1 to 4 first, then the gate, the
 - [x] Fake Kane and end-to-end tests: red, fail, did not run, green, CONFIRMED, MISMATCH (tampered receipt, test edited
       after freeze, red not an ancestor of green), timeout kills the process group, leak scan of every commit
 - [x] Security review fixes: Kane is always kane-cli (fake only via `PROVEN_KANE_BIN`, always labelled); settings pinned
-      in the lock; state read from HEAD and Proven's own commits only; red record invariants; no ignored files or
-      symlinks in the app; G's tree equals what Kane judged; verify derives paths from the ticket id and checks the lock
-      and the state history
+      in the lock; state read from HEAD and Proven's own commits only; red record invariants and the lock chain (red
+      sits on the lock commit); Kane judges a snapshot that Proven serves, and G is exactly that tree; no symlinks in
+      the app; verify derives paths from the ticket id and checks the lock chain, the app trees and the state history;
+      hashes use canonical JSON or git tree ids
 - [x] README stub
 
 ## The gate (live, with Kane)

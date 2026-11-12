@@ -21,14 +21,15 @@ Not built yet: `verify --replay`, `recheck`, `board` and `init` (Requirements 4.
 
 ```
 npm test                                   # the whole loop on a fake Kane, no login needed
-npm run demo                               # the demo shop at http://localhost:8091/
 node bin/proven.js freeze T-1              # a person freezes the ticket's test
-node bin/proven.js red T-1                 # Kane must fail it on today's code
+node bin/proven.js red T-1                 # right after: Kane must fail it on today's code
 # the agent fixes demo/app, then runs: node bin/proven.js done T-1
 node bin/proven.js verify receipts/T-1.json
 ```
 
-Run `npm link` once to call it as `proven` instead of `node bin/proven.js`.
+Proven serves the app itself while Kane runs, so nothing else may listen on the start URL's port then.
+`npm run demo` serves the shop at http://localhost:8091/ for looking at it by hand; stop it before `red` or `done`.
+Run `npm link` once to call Proven as `proven` instead of `node bin/proven.js`.
 
 ## Commands
 
@@ -44,8 +45,15 @@ Exit codes for `red` and `done`: 0 ok, 1 Kane failed (or, at red, the test alrea
 
 ## How a run counts
 
-- Each test starts by opening the start URL and checking a landmark text. Proven checks the app answers HTTP 200
-  before and after each run.
+- Kane judges a snapshot, never the live folder. Proven writes the app folder as a git tree (what a commit would
+  hold), serves exactly that on the start URL's port for the whole run, and on a pass commits exactly that tree.
+  Edits made while Kane runs, and files git ignores, never reach Kane or the commit.
+- For now the app must be static files under the app folder, and the start URL must be local with a port, like
+  http://localhost:8091/.
+- Each test starts by opening the start URL and checking a landmark text. Proven checks that it answers HTTP 200
+  before Kane starts.
+- Red runs right after freeze, on the commit that locked the test. If anything was committed in between,
+  `proven freeze T-N` locks it again on the current commit.
 - Red, or a failed attempt, needs Kane's exit code, final result and step list to agree, the landmark step to pass and
   a later step to fail. A pass needs every step to pass.
 - Anything else is "did not run": nothing is recorded and no attempt is counted.
@@ -60,10 +68,11 @@ the app folder, the time limit and the attempt limit, which are pinned when a ti
 ## Limits
 
 - Receipts are tamper-evident for the files they hash. Kane does not sign them.
-- An agent with shell access can forge local git history, so Proven's local checks are tamper-evident, not
-  tamper-proof. The stronger check is `proven verify --replay`: Kane re-runs the frozen test at the red commit,
-  expecting the recorded failure, and at the green commit, expecting a pass. It is the next requirement (4.3) and is
-  not built yet.
+- An agent with a shell can forge local git history (commits that look like Proven's, a state file, a receipt), so
+  Proven's local checks are tamper-evident, not tamper-proof. The stronger check is `proven verify --replay`: Kane
+  re-runs the frozen test at the red commit, expecting the recorded failure, and at the green commit, expecting a
+  pass. It is the next requirement (4.3) and is not built yet.
+- The app must be static files for now: Proven serves its own snapshot of the app folder while Kane runs.
 - Kane's verdicts can be flaky. That is why red needs a passing landmark and a failing later step, and why anything
   unclear counts as "did not run".
 - Evidence packs are not committed, because they carry the runner's name and email. Proven keeps only their sha256.
