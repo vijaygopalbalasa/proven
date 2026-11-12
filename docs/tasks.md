@@ -36,13 +36,26 @@ Build order from the requirements: Requirements 1 to 4 first, then the gate, the
 
 ## The gate (live, with Kane)
 
-- [ ] T-1: red, the agent fixes it, green, `proven verify` CONFIRMED, with no hand edits
-- [ ] T-2: the same, a second time
+- [x] T-1: red, the agent fixes it, green, `proven verify` CONFIRMED, with no hand edits
+- [x] T-2: the same, a second time
 
-## Later: Requirements 5 to 8
+## Then: Requirements 5 to 8
 
-- [ ] 4.3 `verify --replay` serves the app at the red and green commits and replays the frozen test
-- [ ] 5 `proven recheck` replays done tickets with `--no-adaptive-heal`, confirms with a fresh run, reopens
-- [ ] 6 `proven board` local page, live updates, done only for receipts that verify
-- [ ] 7 `proven init` writes Claude Code hooks and a `CLAUDE.md` section
-- [ ] 8 a third demo ticket that a later change breaks, `npm start` judge mode, README limits
+- [x] 4.3 `verify --replay` serves the app at the red and green commits and replays the frozen test; MISMATCH when a
+      side disagrees, "replay skipped" with the reason when Kane did not run
+- [x] 5 `proven recheck` replays done tickets with `--no-adaptive-heal`, confirms a failure with one `--author` run,
+      and reopens in a state commit of its own; `done` closes a reopened ticket with a receipt that links the earlier
+      one, and `verify` checks the link and the earlier receipt
+- [x] 6 `proven board`: a local page with no build step, live over server-sent events, done only for receipts that
+      verify
+- [x] 7 `proven init`: the PreToolUse guard, the Bash time limits and the `CLAUDE.md` section, merged without
+      clobbering; run here and committed for the demo agent
+- [x] 8 demo ticket T-3 whose natural fix breaks T-1, `npm start` judge mode, README with the limits and measured facts
+- [x] Fake Kane: scenario lists for commands that run Kane more than once, and only the flags Kane CLI 0.10.4 has
+
+## Live, with Kane (a person runs these)
+
+- [ ] T-3: freeze, red, the agent's loop, green
+- [ ] `proven recheck` reopens T-1 after T-3's change, and the agent fixes it again
+- [ ] `proven verify receipts/T-1.json --replay` and `receipts/T-2.json --replay`
+- [ ] The guard refusing an agent's edit to a frozen test, on camera

@@ -1,12 +1,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, readFileSync, rmSync, statSync, symlinkSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, rmSync, statSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { GUARD_COMMAND, GUARD_SOURCE, SECTION_END, SECTION_START } from '../src/commands/init.js';
 import { decide, personStep, shellParts } from '../src/hooks/proven-guard.mjs';
-import { makeRepo, PROVEN } from './support/helpers.js';
+import { makeRepo, PROVEN, ROOT } from './support/helpers.js';
 
 const SESSION = '00000000-0000-4000-8000-0000000000c1';
 
@@ -203,4 +203,12 @@ test('the guard reads shell commands roughly but on purpose', () => {
   assert.equal(personStep(['echo', 'proven', 'red']), null);
   assert.equal(decide({ tool_name: 'Bash', tool_input: {} }, { projectDir: tmpdir() }), null);
   assert.equal(decide(null, { projectDir: tmpdir() }), null);
+});
+
+test('the guard committed for this repository\'s demo agent is the tested one', () => {
+  const committed = join(ROOT, '.claude', 'hooks', 'proven-guard.mjs');
+  if (!existsSync(committed)) return;
+  assert.deepEqual(readFileSync(committed), readFileSync(GUARD_SOURCE), 'run node bin/proven.js init to refresh it');
+  const settings = JSON.parse(readFileSync(join(ROOT, '.claude', 'settings.json'), 'utf8'));
+  assert.ok(settings.hooks.PreToolUse.some((e) => e.hooks.some((h) => h.command === GUARD_COMMAND)));
 });

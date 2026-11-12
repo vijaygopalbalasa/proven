@@ -2,7 +2,8 @@
 
 Proven is a small Node.js CLI (Node 22+, no runtime dependencies). It closes a ticket only on Kane CLI evidence.
 Proven never judges pass or fail. It runs Kane, reads Kane's NDJSON events, compares hashes and git history, and
-writes receipts. This document covers Requirements 1 to 4. Requirements 5 to 8 come after the first gate.
+writes receipts. This document covers Requirements 1 to 8. Requirements 1 to 4 passed a live gate with Kane before
+5 to 8 were built.
 
 ## Files
 
@@ -11,12 +12,13 @@ writes receipts. This document covers Requirements 1 to 4. Requirements 5 to 8 c
 | `tickets/T-N.md` | a person (`proven new` makes the skeleton) | in F | title, start URL, landmark, acceptance criteria, notes |
 | `tickets/T-N_test.md` | `proven freeze` | in F | Kane test: step 1 opens the start URL and checks the landmark, then one step per criterion |
 | `tickets/T-N.lock.json` | `proven freeze` | alone, right after F | sha256 of the test and the ticket, F, and the pinned settings with their sha256 |
-| `.proven/state/T-N.json` | `proven red`, `proven done` | alone (red, each failed attempt), with the receipt (green) | status, the red record, attempts, last failure |
+| `.proven/state/T-N.json` | `proven red`, `proven done`, `proven recheck` | alone (red, each failed attempt, a reopen), with the receipt (green) | status, the red record, attempts, last failure, the reopen |
 | `receipts/T-N.json` | `proven done` | with the state, right after G | the receipt |
 | `tickets/output-T-N/` | Kane | never (gitignored) | Kane's recording: it carries Kane account and session ids, so it stays local for replays on this machine |
 | `.proven/config.json` | a person | yes | `app`, `timeout_s`, `max_attempts` (nothing else is allowed) |
-| `.proven/runs/` | Proven | never (gitignored) | raw Kane output and copies of failing screenshots, for the agent |
+| `.proven/runs/` | Proven | never (gitignored) | raw Kane output, copies of failing screenshots for the agent, and `T-N/active.json` while Kane runs, for the board |
 | `.testmuai/` | Kane | never (gitignored) | evidence packs, which carry the runner's name and email |
+| `.claude/settings.json`, `.claude/hooks/proven-guard.mjs`, `CLAUDE.md` | `proven init` | by a person, if they want | the guard rails for a Claude Code agent |
 
 ## Kane and the settings
 
@@ -70,6 +72,7 @@ Proven lists the changed paths and stops if any falls outside the allowed set.
 | done, Kane failed | state | `.proven/state/T-N.json` (one commit per failed attempt) |
 | done, Kane passed | G | the app folder (G = HEAD if the app folder is already committed) |
 | done, Kane passed | receipt | `receipts/T-N.json`, `.proven/state/T-N.json` |
+| recheck, a confirmed failure | reopen | `.proven/state/T-N.json` (red again = HEAD before it) |
 
 ## What Proven trusts
 
@@ -81,9 +84,12 @@ Proven lists the changed paths and stops if any falls outside the allowed set.
   locks the ticket again on the current commit (an empty F commit, then a new lock).
 - **The state.** Decisions come from the state as committed at HEAD. A working-tree copy that differs from HEAD is
   refused. Every commit that ever changed a state file must look like Proven's: the state file alone, or the receipt
-  commit. The red record must have every field (nothing is assumed). The first state commit after L must sit right
-  on L and record red on L, and no later state commit may change the red record. The number of state commits since
-  red must be the attempt count plus one.
+  commit. The red record must have every field (nothing is assumed). The state history after L comes in rounds. Round
+  1 starts with the first state commit after L, which must sit right on L and record red on L. A later round starts
+  when `proven recheck` reopens a done ticket: that state commit must follow a done and sit right on the commit it
+  names as red. Inside a round no state commit may change the round's red record, and nothing follows a done except a
+  reopen, or a needs a person at all. The number of state commits since the current red must be the attempt count
+  plus one.
 - **The app folder: Kane judges a snapshot, never the live folder.** For each run Proven writes the app folder as a
   git tree with a temporary index (what a commit would hold: tracked and untracked files, not ignored ones), exports
   that tree to a temporary folder and serves it itself, with `Cache-Control: no-store`, on the start URL's port for
@@ -136,10 +142,71 @@ files under the app folder, and the start URL must be local with a port (for exa
   7. the test did not change between red and G;
   8. the app trees at red and G match the receipt, and differ;
   9. the state history shows the red record right after red, then one commit per failed attempt;
-  10. the receipt is committed as it is, after G.
+  10. the receipt is committed as it is, after G;
+  11. for a ticket that was reopened and closed again: the earlier receipt it links is committed as linked, has the
+      same frozen test and settings, came before this red with no state change in between, and verifies itself.
 
-  It prints CONFIRMED (exit 0) or MISMATCH with each failed check (exit 1). `--replay` (4.3) is a stub until it is
-  built.
+  For a later close, check 4 does not ask red to be the lock commit, and check 9 expects a reopen right after red,
+  linking the same earlier receipt. It prints CONFIRMED (exit 0) or MISMATCH with each failed check (exit 1).
+
+## Replay (4.3)
+
+`verify --replay` runs only when the git checks pass. It takes the frozen test from F, refuses to run when the test
+in the working tree differs (Kane runs on that path), and runs Kane on it twice with the same command red and done
+ran: first with the tree at red (`red.app_tree`) served on the start URL's port, where Kane must fail at the recorded
+step, then with the tree at green, where Kane must pass. Kane replays its local recording if there is one and
+re-authors a step whose replay misses, so a moved button cannot fake a failure; a fresh clone authors every step. A
+side that disagrees makes the result MISMATCH. When Kane does not run, the line says "replay skipped" with the reason
+and the git result stands; without a red replay there is nothing to compare, so green is not tried. A replay writes
+nothing to git.
+
+## Recheck and reopen (5)
+
+`proven recheck [T-N ...]` takes every ticket whose state is done, and skips (with the reason) one that fails the
+checks done makes (the frozen test, the lock chain, the red record) or whose receipt does not verify. It refuses while
+the app folder has uncommitted changes, so a reopen names exactly the code Kane judged: the app tree at HEAD. For each
+ticket, Kane replays the frozen test with `--no-adaptive-heal`, so a replay miss fails instead of healing. A pass or a
+did not run changes nothing. A failure is confirmed by one fresh run with `--author` (Kane CLI 0.10.4: re-author every
+step). If that passes, the ticket stays done. If it fails too, and no commit was made meanwhile, the state is written
+again in a commit of its own on HEAD: status reopened, attempts 0, a new red record from the fresh run (commit = HEAD,
+the app tree, step, Kane's words, credits, evidence hash), and `reopened` with the replay's failure and the earlier
+receipt (path, the commit that wrote it, its sha256, its green). Exit 1 when a ticket reopened, 2 when something did
+not run, 0 otherwise.
+
+`proven done` works on a reopened ticket as on a red one. Its receipt carries `previous: { commit, receipt_sha256 }`,
+taken from the reopen. `red` and `freeze` refuse a reopened ticket.
+
+## The board (6)
+
+`proven board [--port 8090] [--judge]` serves one HTML page (no build step, no dependencies, nothing loaded from the
+network) on the loopback addresses only, plus `/api/board`, `/events` (server-sent events) and
+`/receipts/T-N.json` (the receipt as committed). The model reads only committed state: the lock and state at HEAD,
+trusted only when Proven's own commits wrote them and the red record checks out, and done only when the receipt
+verifies with git; otherwise the card says needs a person and why. Each second the server compares a cheap key
+(HEAD, the ticket files, the `active.json` files) and, when it changed, builds the model again and pushes it if it
+differs. The page builds every element with text, never markup. Done cards carry a red "Failed before the change" and
+a green "Passed after" stamp. `npm start` is `proven board --judge`, which adds a note that the cards come from the
+committed receipts and that new runs need `kane-cli login`.
+
+## Guard rails for the agent (7)
+
+`proven init` copies `src/hooks/proven-guard.mjs` (Node only, no imports from Proven) to
+`.claude/hooks/proven-guard.mjs`, adds one PreToolUse hook to `.claude/settings.json` for Write, Edit, MultiEdit,
+NotebookEdit and Bash (`node "$CLAUDE_PROJECT_DIR/.claude/hooks/proven-guard.mjs"`), sets Bash time limits of 10 and
+15 minutes unless the settings hold others, and puts a marked section into `CLAUDE.md`. It reads and checks everything
+before it writes, keeps other settings and text, replaces only its own hook and section on a second run, and commits
+nothing. The guard reads Claude Code's PreToolUse JSON from stdin. It blocks (exit 2, the reason on stderr) a file tool
+whose path, after symlinks and without case, falls under `tickets/`, `receipts/`, `.proven/` or `.claude/`, and a Bash
+command that runs `proven new`, `freeze` or `red` (also behind node, npx, env or `sh -c`, or inside `$( )`) or writes to
+those folders with `>`, `>>` or `tee`. Input it cannot read is let through. It is a guard rail, not a sandbox.
+
+## Demo (8)
+
+The shop in `demo/app/` holds no comment or text that names a bug. T-1 (SAVE10) and T-2 (free shipping at $50) were
+closed in the live gate. T-3 asks the cart to take exactly the codes in `demo/app/coupons.json`, which marketing filled
+with FALL15 only; the cart ignores the file today. Its natural fix drops the SAVE10 code, so after T-3 closes,
+`proven recheck` reopens T-1 with the same failure as T-1's first red, and the agent fixes it again (for example by
+adding SAVE10 to the file).
 
 ## Receipt
 
@@ -149,6 +216,7 @@ files under the app folder, and the start URL must be local with a port (for exa
   frozen:   { commit F, test, test_sha256, ticket, ticket_sha256 },
   red:      { commit, failed_step, failed_step_title, kane_one_liner, kane_reason, evidence_sha256, kane, kane_cli, duration_s, credits, app_tree },
   green:    { commit G, steps_passed, steps_total, evidence_sha256, kane, kane_cli, duration_s, credits, failed_attempts, app_tree },
+  previous: { commit, receipt_sha256 },   (only for a ticket reopened by recheck and closed again)
   receipt_sha256 }
 ```
 
@@ -165,15 +233,18 @@ paths, so they are never committed even where the ignore rule is missing.
 ## Limits
 
 An agent with shell access can forge local git history, so Proven's local checks are tamper-evident, not
-tamper-proof. The stronger check is `verify --replay` (Requirement 4.3, next): Kane re-runs the frozen test at the red
-commit, expecting the recorded failure, and at the green commit, expecting a pass.
+tamper-proof. The stronger check is `verify --replay`: Kane re-runs the frozen test at the red commit, expecting the
+recorded failure, and at the green commit, expecting a pass. The guard rails are not a sandbox, so the board shows done
+only for a receipt that verifies.
 
 ## Testing
 
 `npm test` runs `node --test` and never calls the real Kane CLI. The fake Kane (`test/support/fake-kane.js`, set
 through `PROVEN_KANE_BIN`) replays scrubbed NDJSON recorded from Kane CLI 0.10.4 with the recorded exit codes. Like
 Kane, it writes the recording folder and an evidence pack, fetches pages from the app Proven serves, and it can hang,
-crash, leak private text or change the app mid-run. The end-to-end tests drive the whole loop in temporary git repos against the real demo server. A `kane-cli`
+crash, leak private text or change the app mid-run. It accepts only the flags Kane CLI 0.10.4 has for `testmd run`,
+logs which ones it got and whether a recording was there, and takes a list of scenarios for a command that runs Kane
+more than once (verify --replay, recheck). The end-to-end tests drive the whole loop in temporary git repos against the real demo server. A `kane-cli`
 shim placed first on PATH fails loudly if anything reaches for the real CLI. Leak tests scan every blob of every
 commit, and this repository itself, for emails, home paths, Kane session and account ids and share links, with no
 exception for any folder.
