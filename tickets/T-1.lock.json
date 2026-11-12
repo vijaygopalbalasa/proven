@@ -1,0 +1,15 @@
+{
+  "ticket": "T-1",
+  "ticket_path": "tickets/T-1.md",
+  "ticket_sha256": "b2ed80ef27ff8339afc1b921675ee530d6acf91341166d267fb3be5cd5bc9b8b",
+  "test_path": "tickets/T-1_test.md",
+  "test_sha256": "881a05071de57def25a84d3b85ef6e184f568d44027881d6d43075c46ad87506",
+  "frozen_commit": "75b602402eecb37c05e9f68789b5de9518b3faac",
+  "settings": {
+    "app": "demo/app",
+    "timeout_s": 300,
+    "max_attempts": 4,
+    "start_url": "http://localhost:8091/"
+  },
+  "settings_sha256": "32698c473effe7c2026cb50799e390455aff050bf78b69899db0714870dbd870"
+}
