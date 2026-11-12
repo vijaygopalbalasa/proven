@@ -127,7 +127,7 @@ async function recheckOne(ctx, { id, lock, state }, kane) {
       },
       reopened: {
         by: 'proven recheck',
-        replay: failureRecord(replay, replayWords),
+        first_run: failureRecord(replay, replayWords),
         previous: {
           receipt: p.receipt,
           commit: receiptAt.commit,

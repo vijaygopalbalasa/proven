@@ -94,7 +94,7 @@ test('the board shows a reopened ticket, then the second close with its earlier 
   const first = repo.json('receipts/T-1.json');
   repo.write('demo/app/cart.js', repo.read('demo/app/cart.js').replace('const coupons = { save10: 10 };', 'const coupons = { fall15: 15 };'));
   repo.git('commit', '-q', '-am', 'Take the codes from the autumn campaign');
-  assert.equal((await repo.run(['recheck'], { scenario: ['replay-fail', 'red'] })).code, 1);
+  assert.equal((await repo.run(['recheck'], { scenario: ['red', 'red'] })).code, 1);
 
   let t1 = card(boardModel(repo.dir), 'T-1');
   assert.equal(t1.state, 'reopened');
@@ -102,7 +102,7 @@ test('the board shows a reopened ticket, then the second close with its earlier 
   assert.equal(t1.red.commit, repo.git('rev-parse', 'HEAD~1'));
   assert.deepEqual(t1.reopened, {
     at: repo.git('rev-parse', 'HEAD~1'),
-    replay_one_liner: 'Applying SAVE10 leaves the $20.00 cart total unchanged instead of showing $18.00.',
+    first_run_one_liner: 'The cart accepts SAVE10, but applying it leaves the total at $20.00 instead of $18.00.',
     previous_receipt_sha256: first.receipt_sha256,
     previous_green: first.green.commit,
   });

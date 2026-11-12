@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { classifyRun } from '../src/classify.js';
+import { classifyRun, replayProblem } from '../src/classify.js';
 import { ROOT } from './support/helpers.js';
 import { SESSIONS } from './support/patterns.js';
 
@@ -128,4 +128,15 @@ test('ids, links and absolute paths from the run are collected so they can be ke
   const v = run(events, 1);
   for (const value of Object.values(values)) assert.ok(v.exact.includes(value), value);
   assert.ok(!v.exact.includes('Open the cart'));
+});
+
+test('only a run where Kane authored every step counts: a replayed or healed step, or no summary, does not', () => {
+  assert.equal(replayProblem(load('red')), null);
+  assert.equal(replayProblem(load('green')), null);
+  assert.equal(replayProblem(load('replay-fail')), 'Kane replayed 2 recorded steps instead of authoring every step, so this run does not count');
+  assert.equal(replayProblem(load('green').filter((e) => e.type !== 'test_md_summary')), 'Kane wrote no step summary, so Proven cannot tell that it authored every step');
+  const healed = load('green').map((e) => (e.type === 'test_md_summary' ? { ...e, adaptive_heal: { triggered: true } } : e));
+  assert.equal(replayProblem(healed), 'Kane healed a replayed step instead of authoring every step, so this run does not count');
+  const one = load('green').map((e) => (e.type === 'test_md_summary' ? { ...e, steps: { ...e.steps, replay_decisions: 1 } } : e));
+  assert.match(replayProblem(one), /^Kane replayed 1 recorded step instead/);
 });

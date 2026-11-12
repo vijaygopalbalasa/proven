@@ -103,10 +103,15 @@ Proven lists the changed paths and stops if any falls outside the allowed set.
 
 `kane-cli testmd run tickets/T-N_test.md --agent --headless`, from the repo root, as its own process group, while
 Proven serves the snapshot. Kane would replay the steps it recorded in `tickets/output-T-N/`, a folder that is never
-committed and that anyone with a shell can edit, so a tampered recording could pass a broken app. Proven therefore
-copies that folder out of the repository and removes it before every run, so Kane authors every step from the frozen
-test, and afterwards puts it back exactly as it was (or removes the one Kane wrote, if there was none). Kane's output
-from the run is kept in `.proven/runs/` and its evidence pack in `.testmuai/`. Proven keeps its own timer (`timeout_s`, default 300) and kills the whole group on timeout
+committed and that anyone with a shell can edit, so a tampered recording could pass a broken app. Two defences keep a
+recording from deciding a verdict. Proven copies that folder out of the repository and removes it before every run,
+and afterwards puts it back exactly as it was (or removes the one Kane wrote, if there was none). And every run passes
+`--author` (Kane CLI 0.10.4: re-author every step), so a recording that appears while Kane runs, for example from an
+agent's parallel tool call, is not replayed either. After the run Proven checks both: if the folder reappeared before
+Kane started, Kane is not run; if Kane's `test_md_summary` is missing or shows a replayed step (`replay_decisions` above
+0) or a heal, or the output folder holds a file older than the run or a symlink, the run is "did not run" (exit 2, no
+attempt counted), never a pass or a fail. Kane's output from the run is kept in `.proven/runs/` and its evidence pack
+in `.testmuai/`. Proven keeps its own timer (`timeout_s`, default 300) and kills the whole group on timeout
 or Ctrl+C, because Kane's launcher ignores SIGTERM and runs the real CLI as a child. Decisions use only stdout NDJSON.
 Kane's stderr is shown, with emails and home paths masked, only as a hint when Kane did not start. Before Kane starts,
 Proven checks that the start URL answers HTTP 200 from the snapshot and, if not, says "did not run: the app is not
@@ -174,7 +179,7 @@ every step fresh; Requirement 5 asked for a replay, but a replay would trust the
 could say "still passes". A pass or a did not run changes nothing. A failure is confirmed by a second fresh run. If
 that passes, the ticket stays done. If it fails too, and no commit was made meanwhile, the state is written again in a
 commit of its own on HEAD: status reopened, attempts 0, a new red record from the second run (commit = HEAD, the app
-tree, step, Kane's words, credits, evidence hash), and `reopened` with the first run's failure and the earlier receipt
+tree, step, Kane's words, credits, evidence hash), and `reopened` with the first run's failure (`first_run`) and the earlier receipt
 (path, the commit that wrote it, its sha256, its green). Exit 1 when a ticket reopened, 2 when something did
 not run, 0 otherwise.
 
@@ -201,9 +206,10 @@ NotebookEdit and Bash (`node "$CLAUDE_PROJECT_DIR/.claude/hooks/proven-guard.mjs
 15 minutes unless the settings hold others, and puts a marked section into `CLAUDE.md`. It reads and checks everything
 before it writes, keeps other settings and text, replaces only its own hook and section on a second run, and commits
 nothing. The guard reads Claude Code's PreToolUse JSON from stdin. It blocks (exit 2, the reason on stderr) a file tool
-whose path, after symlinks and without case, falls under `tickets/`, `receipts/`, `.proven/` or `.claude/`, and a Bash
-command that runs `proven new`, `freeze` or `red` (also behind node, npx, env or `sh -c`, or inside `$( )`) or writes to
-those folders with `>`, `>>` or `tee`. Input it cannot read is let through. It is a guard rail, not a sandbox.
+whose path, after symlinks and without case, falls under `tickets/` (which holds Kane's recordings), `receipts/`,
+`.proven/` or `.claude/`, and a Bash command that runs `proven new`, `freeze` or `red` (also behind node, npx, env or
+`sh -c`, or inside `$( )`) or writes to those folders with `>`, `>>`, `tee`, `cp`, `mv` (either side), `ln`, `rsync`,
+`install`, `mkdir`, `touch`, `rm`, `truncate`, `sed -i`, `perl -i`, `tar -C` or `unzip -d`. Input it cannot read is let through. It is a guard rail, not a sandbox.
 
 ## Demo (8)
 

@@ -90,7 +90,7 @@ test('the gate: freeze, red, a failed attempt, did-not-run cases, green, receipt
   assert.match(r.stdout, new RegExp(`T-1 is red at ${lockCommit.slice(0, 7)}\\. Kane failed step 2 \\(Apply SAVE10\\)\\.`));
   both(r, /^Kane: fake \(PROVEN_KANE_BIN\)\. This run is not Kane CLI evidence\.$/m);
   const redCall = repo.kaneCalls().at(-1);
-  assert.deepEqual(redCall.args, ['testmd', 'run', 'tickets/T-1_test.md', '--agent', '--headless']);
+  assert.deepEqual(redCall.args, ['testmd', 'run', 'tickets/T-1_test.md', '--agent', '--headless', '--author']);
   let state = repo.json(STATE);
   assert.equal(state.status, 'red');
   assert.equal(state.frozen_commit, lock.frozen_commit);
@@ -127,11 +127,15 @@ test('the gate: freeze, red, a failed attempt, did-not-run cases, green, receipt
   assert.equal(state.last_failure.failed_step, 2);
   assert.deepEqual(repo.changed('HEAD'), [STATE]);
 
-  // A replayed failure is an attempt too.
-  r = await repo.run(['done', 'T-1'], { scenario: 'replay-fail' });
+  // A second failure is a second attempt.
+  r = await repo.run(['done', 'T-1'], { scenario: 'red' });
   assert.equal(r.code, 1);
-  both(r, /Kane says: Applying SAVE10 leaves the \$20\.00 cart total unchanged/);
   both(r, /Attempt 2 of 4\./);
+
+  // A run that replayed a recording instead of authoring every step does not count, even as a failure.
+  r = await repo.run(['done', 'T-1'], { scenario: 'replay-fail' });
+  assert.equal(r.code, 2);
+  both(r, /did not run: Kane replayed 2 recorded steps instead of authoring every step, so this run does not count/);
 
   // Requirement 3.3: did not run counts no attempt.
   for (const scenario of ['not-started', 'env-down', 'landmark-down']) {

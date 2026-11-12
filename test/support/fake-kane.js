@@ -6,7 +6,7 @@
 // so the tests can prove Proven never commits them.
 import { spawn } from 'node:child_process';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
-import { appendFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { appendFileSync, existsSync, mkdirSync, readFileSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -66,10 +66,24 @@ function pickScenario(value) {
 const testPath = resolve(process.cwd(), args[2]);
 const testText = readFileSync(testPath, 'utf8');
 const stem = basename(testPath).replace(/_test\.md$/, '');
-// Kane replays the steps it has recorded in output-<stem>/ next to the test, and authors the rest.
-const recordingBefore = existsSync(join(dirname(testPath), `output-${stem}`, 'Result.md'));
-// FAKE_KANE_RECORDING_PASSES stands for a tampered recording: whenever one is there, the run replays it and passes.
-if (recordingBefore && process.env.FAKE_KANE_RECORDING_PASSES) scenarioName = 'green';
+// Kane replays the steps it has recorded in output-<stem>/ next to the test, unless --author makes it author every
+// step again. The knobs below stand for an attacker with a shell:
+//   FAKE_KANE_RECORDING_PASSES  a tampered recording: a run that replays it passes.
+//   FAKE_KANE_PLANTED_MIDRUN    a passing recording written into output-<stem>/ just as Kane starts, the way a parallel
+//                               tool call could land between Proven setting the recording aside and Kane reading it.
+//   FAKE_KANE_REPLAYS           the run replays recorded steps whatever the flags say, and its summary shows it.
+//   FAKE_KANE_STALE_FILE        a file from before the run is left in output-<stem>/ after it.
+const recordingDir = join(dirname(testPath), `output-${stem}`);
+const recordingBefore = existsSync(join(recordingDir, 'Result.md'));
+const author = args.includes('--author');
+let planted = false;
+if (process.env.FAKE_KANE_PLANTED_MIDRUN) {
+  mkdirSync(recordingDir, { recursive: true });
+  writeFileSync(join(recordingDir, 'Result.md'), '---\nstatus: passed\n---\n\n# planted: every step passed\n');
+  planted = true;
+}
+const replays = (!author && (recordingBefore || planted)) || Boolean(process.env.FAKE_KANE_REPLAYS);
+if (!author && ((recordingBefore && process.env.FAKE_KANE_RECORDING_PASSES) || planted)) scenarioName = 'green';
 const scenario = SCENARIOS[scenarioName];
 const steps = [];
 for (const line of testText.split('\n')) {
@@ -115,6 +129,8 @@ function log(extra = {}) {
       args,
       extra_args: extraArgs,
       recording_before: recordingBefore,
+      planted,
+      replayed: replays,
       session_id: sessionId,
       share_url: shareUrl,
       session_dir: sessionDir,
@@ -188,6 +204,15 @@ function play() {
     }
   }
 
+  if (replays) {
+    for (const e of events) {
+      if (e.type === 'test_md_summary' && e.steps) {
+        e.steps.replay_decisions = statuses.size;
+        e.steps.author_decisions = 0;
+      }
+    }
+  }
+
   let wroteRecording = false;
   let touched = false;
   for (const e of events) {
@@ -204,6 +229,12 @@ function play() {
     }
   }
   if (!wroteRecording) writeRecording(statuses, overall);
+  if (process.env.FAKE_KANE_STALE_FILE) {
+    const stale = join(recordingDir, 'planted.txt');
+    writeFileSync(stale, 'written before this run\n');
+    const hourAgo = new Date(Date.now() - 3600 * 1000);
+    utimesSync(stale, hourAgo, hourAgo);
+  }
   process.stderr.write(`Evidence pack: ${join(process.cwd(), '.testmuai', 'evidence', `${evidenceId}.evidence`)}\n`);
   process.exitCode = scenario.exit;
 }

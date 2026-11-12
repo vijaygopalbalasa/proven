@@ -1,7 +1,7 @@
-import { cpSync, lstatSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
-import { classifyRun } from './classify.js';
+import { classifyRun, replayProblem } from './classify.js';
 import { Refusal } from './errors.js';
 import { fileSha256, findPack } from './evidence.js';
 import { head, ignoredFiles, isIgnored, short, worktreeFiles } from './git.js';
@@ -84,6 +84,31 @@ export function setRecordingAside(root, id) {
   };
 }
 
+// After a run, the output folder may hold only what Kane wrote during it. A file older than the run (or a symlink)
+// was put there by someone else. Two seconds of slack cover file systems that keep whole seconds; anything planted
+// just before Kane started is caught by the folder having to be absent when Kane starts.
+function foreignEntry(dir, startedMs) {
+  const walk = (folder, prefix) => {
+    let entries = [];
+    try {
+      entries = readdirSync(folder, { withFileTypes: true });
+    } catch {
+      return null;
+    }
+    for (const entry of entries) {
+      const rel = prefix ? `${prefix}/${entry.name}` : entry.name;
+      const info = lstatSync(join(folder, entry.name));
+      if (info.isSymbolicLink() || info.mtimeMs < startedMs - 2000) return rel;
+      if (info.isDirectory()) {
+        const inner = walk(join(folder, entry.name), rel);
+        if (inner) return inner;
+      }
+    }
+    return null;
+  };
+  return walk(dir, '');
+}
+
 const notRun = (reason) => ({ outcome: 'did-not-run', reason, exact: [] });
 
 export function announceKane(out, kane) {
@@ -112,12 +137,21 @@ export async function runKaneOnTree(ctx, { id, label, steps, startUrl, kane, tre
     out.progress(`Serving ${what} as tree ${short(tree)} at ${startUrl}`);
     const flags = extraArgs.length ? ` with ${extraArgs.join(' ')}` : '';
     out.progress(`Running Kane on ${p.test} (${steps.length} steps)${flags}. This takes about a minute.`);
+    // Two defences, so that no recording decides the verdict: the recording is set aside, and --author makes Kane
+    // author every step even if one appears while it runs. Afterwards Kane's own summary and the output folder must
+    // both show a fresh run, or the run does not count.
     const putBack = setRecordingAside(root, id);
+    const output = recordingDir(id);
     let result;
+    let foreign = null;
     try {
+      if (present(join(root, output))) {
+        return notRun(`${output}/ appeared after Proven set the recording aside, so Kane was not run`);
+      }
+      const startedMs = Date.now();
       result = await runKane({
         command: kane.command,
-        args: ['testmd', 'run', p.test, '--agent', '--headless', ...extraArgs],
+        args: ['testmd', 'run', p.test, '--agent', '--headless', '--author', ...extraArgs],
         cwd: root,
         timeoutMs: timeoutS * 1000,
         onEvent: (e) => {
@@ -128,6 +162,7 @@ export async function runKaneOnTree(ctx, { id, label, steps, startUrl, kane, tre
           }
         },
       });
+      foreign = foreignEntry(join(root, output), startedMs);
     } finally {
       putBack();
     }
@@ -142,6 +177,13 @@ export async function runKaneOnTree(ctx, { id, label, steps, startUrl, kane, tre
     }
     if (verdict.outcome !== 'did-not-run' && head(root) !== headBefore) {
       Object.assign(verdict, { outcome: 'did-not-run', reason: 'a commit was made while Kane ran' });
+    }
+    if (verdict.outcome !== 'did-not-run') {
+      const replayed = replayProblem(result.events);
+      if (replayed) Object.assign(verdict, { outcome: 'did-not-run', reason: replayed });
+      else if (foreign) {
+        Object.assign(verdict, { outcome: 'did-not-run', reason: `${output}/ holds a file Kane did not write in this run (${foreign}), so this run does not count` });
+      }
     }
     if (verdict.reason) verdict.reason = scrubText(verdict.reason, { exact: verdict.exact });
     const pack = findPack(root, p.test, verdict);

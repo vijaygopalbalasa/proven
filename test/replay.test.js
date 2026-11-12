@@ -26,10 +26,10 @@ test('verify --replay serves the app as it was at red and at green, and Kane agr
   assert.match(r.stdout, /^Kane ran the frozen test again: it failed without the change and passed with it\.$/m);
   assert.match(r.stderr, /Kane: fake \(PROVEN_KANE_BIN\)\. This run is not Kane CLI evidence\./);
 
-  // The command red and done ran, fresh (no recording), on exactly the trees the receipt names.
+  // The command red and done run, fresh (no recording, --author), on exactly the trees the receipt names.
   const [red, green] = repo.kaneCalls().slice(calls);
   for (const call of [red, green]) {
-    assert.deepEqual(call.args, ['testmd', 'run', 'tickets/T-1_test.md', '--agent', '--headless']);
+    assert.deepEqual(call.args, ['testmd', 'run', 'tickets/T-1_test.md', '--agent', '--headless', '--author']);
     assert.equal(call.recording_before, false);
   }
   const cart = (commit) => sha256(Buffer.from(repo.git('show', `${commit}:demo/app/cart.js`) + '\n'));
@@ -52,7 +52,7 @@ test('verify --replay: a red that Kane now passes is a MISMATCH', async (t) => {
 
 test('verify --replay: a green that Kane now fails is a MISMATCH', async (t) => {
   const repo = await greenRepo(t);
-  const r = await repo.run(['verify', RECEIPT, '--replay'], { scenario: ['red', 'replay-fail'] });
+  const r = await repo.run(['verify', RECEIPT, '--replay'], { scenario: ['red', 'red'] });
   assert.equal(r.code, 1, r.stdout);
   assert.match(r.stdout, /^MISMATCH receipts\/T-1\.json/m);
   assert.match(lines(r.stdout, 'FAIL')[0], /^replay at green [0-9a-f]{7}: Kane failed step 2 \(Apply SAVE10\), but the receipt records a pass$/);

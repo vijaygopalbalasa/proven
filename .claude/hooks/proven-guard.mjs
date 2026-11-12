@@ -3,8 +3,9 @@
 // Edit, MultiEdit, NotebookEdit and Bash call (a PreToolUse hook) and sends the call as JSON on stdin. Exit code 2
 // blocks the call and shows the reason on stderr to the agent. Exit code 0 lets it through.
 //
-// It blocks the agent from changing files under tickets/, receipts/, .proven/ and .claude/, and from running
-// proven new, proven freeze or proven red, which are a person's steps. It is a guard rail, not a sandbox: an agent
+// It blocks the agent from changing files under tickets/ (which holds Kane's recordings, tickets/output-T-N/),
+// receipts/, .proven/ and .claude/, and from running proven new, proven freeze or proven red, which are a person's
+// steps. It is a guard rail, not a sandbox: an agent
 // with a shell can still get around it. That is why Proven shows a ticket as done only for a receipt that verifies.
 import { existsSync, realpathSync } from 'node:fs';
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
@@ -143,6 +144,61 @@ export function personStep(words) {
   return PERSON_STEPS.includes(step) ? step : null;
 }
 
+// The paths a simple command writes to, for the usual ways a shell copies, moves, links, creates, deletes or edits
+// files in place. Reading is left alone: cp tickets/T-1.md elsewhere is fine.
+export function writeTargets(words) {
+  const name = basename(words[0] ?? '');
+  const args = words.slice(1);
+  const plain = args.filter((w) => !w.startsWith('-'));
+  const valueOf = (...flags) => {
+    for (let i = 0; i < args.length; i++) {
+      for (const f of flags) {
+        if (args[i] === f) return args[i + 1] ?? null;
+        if (f.startsWith('--') && args[i].startsWith(`${f}=`)) return args[i].slice(f.length + 1);
+        if (!f.startsWith('--') && args[i].startsWith(f) && args[i].length > f.length) return args[i].slice(f.length);
+      }
+    }
+    return null;
+  };
+  switch (name) {
+    case 'cp':
+    case 'ln':
+    case 'rsync':
+    case 'install':
+    case 'ditto':
+    case 'scp': {
+      const target = valueOf('-t', '--target-directory');
+      return target ? [target] : plain.slice(-1);
+    }
+    case 'mv': {
+      // Moving a file away changes it as much as writing over it.
+      const target = valueOf('-t', '--target-directory');
+      return target ? [target, ...plain] : plain;
+    }
+    case 'mkdir':
+    case 'touch':
+    case 'rm':
+    case 'rmdir':
+    case 'unlink':
+    case 'truncate':
+    case 'shred':
+      return plain;
+    case 'sed':
+    case 'perl':
+      return args.some((w) => /^-[A-Za-z]*i/.test(w) || w.startsWith('--in-place')) ? plain : [];
+    case 'tar': {
+      const dir = valueOf('-C', '--directory');
+      return dir ? [dir] : [];
+    }
+    case 'unzip': {
+      const dir = valueOf('-d');
+      return dir ? [dir] : [];
+    }
+    default:
+      return [];
+  }
+}
+
 function bashVerdict(command, where, depth = 0) {
   const { commands, targets } = shellParts(command);
   for (const words of commands) {
@@ -150,6 +206,7 @@ function bashVerdict(command, where, depth = 0) {
     if (step) return `Proven: proven ${step} is a person's step, not the agent's. Work on the app. ${DONE_HINT}`;
     const name = basename(words[0] ?? '');
     if (name === 'tee') targets.push(...words.slice(1).filter((w) => !w.startsWith('-')));
+    targets.push(...writeTargets(words));
     if (SHELLS.has(name) && depth < 3) {
       const k = words.indexOf('-c');
       if (k > 0 && words[k + 1]) {

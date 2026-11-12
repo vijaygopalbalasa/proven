@@ -110,6 +110,23 @@ function summaryAgrees(summary, expected) {
   return true;
 }
 
+// Did Kane author every step, or replay some from a recording? Proven counts only runs where Kane authored every step,
+// so a recording (never committed, editable by anyone with a shell) can never decide a verdict. Returns why a run
+// that Kane says passed or failed still does not count, or null.
+export function replayProblem(events) {
+  const summary = [...(events ?? [])].reverse().find((e) => e && e.type === 'test_md_summary');
+  if (!summary || !summary.steps || typeof summary.steps !== 'object') {
+    return 'Kane wrote no step summary, so Proven cannot tell that it authored every step';
+  }
+  const replayed = Number(summary.steps.replay_decisions ?? 0);
+  if (!Number.isFinite(replayed) || replayed > 0) {
+    const n = Number.isFinite(replayed) ? replayed : 'some';
+    return `Kane replayed ${n} recorded ${replayed === 1 ? 'step' : 'steps'} instead of authoring every step, so this run does not count`;
+  }
+  if (summary.adaptive_heal?.triggered === true) return 'Kane healed a replayed step instead of authoring every step, so this run does not count';
+  return null;
+}
+
 export function classifyRun({ events, exitCode, timedOut, interrupted, spawnError, steps, timeoutS, command }) {
   const facts = readEvents(events ?? []);
   const N = steps.length;

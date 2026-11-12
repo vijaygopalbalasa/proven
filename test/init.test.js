@@ -143,6 +143,21 @@ test('the hook blocks writes to tickets, receipts, .proven and .claude, and a pe
     ['Bash', { command: "printf '{}' >> receipts/T-1.json" }, /under receipts\//],
     ['Bash', { command: 'cat x.json | tee -a .proven/state/T-1.json' }, /under \.proven\//],
     ['Bash', { command: "cat > tickets/T-1_test.md <<'EOF'\n## Open\nEOF" }, /under tickets\//],
+    // Kane's recording lives in tickets/output-T-N/: no way to plant one there.
+    ['Write', { file_path: join(dir, 'tickets', 'output-T-1', 'Result.md'), content: 'every step passed' }, /tickets\/output-T-1\/Result\.md is under tickets\//],
+    ['Bash', { command: 'cp -r /tmp/recording tickets/output-T-1' }, /writes to tickets\/output-T-1, under tickets\//],
+    ['Bash', { command: 'cp -t tickets/output-T-1 /tmp/recording/Result.md' }, /writes to tickets\/output-T-1, under tickets\//],
+    ['Bash', { command: 'mv /tmp/recording tickets/output-T-3' }, /under tickets\//],
+    ['Bash', { command: 'mv tickets/T-1_test.md /tmp/gone.md' }, /under tickets\//],
+    ['Bash', { command: 'ln -s /tmp/recording tickets/output-T-1' }, /under tickets\//],
+    ['Bash', { command: 'rsync -a /tmp/recording/ tickets/output-T-1/' }, /under tickets\//],
+    ['Bash', { command: 'mkdir -p tickets/output-T-1/.internal' }, /under tickets\//],
+    ['Bash', { command: 'rm -rf tickets/output-T-1' }, /under tickets\//],
+    ['Bash', { command: 'touch receipts/T-1.json' }, /under receipts\//],
+    ['Bash', { command: "sed -i '' 's/27.50/30.00/' tickets/T-1_test.md" }, /under tickets\//],
+    ['Bash', { command: "perl -pi -e 's/27.50/30.00/' tickets/T-1_test.md" }, /under tickets\//],
+    ['Bash', { command: 'tar -xf recording.tar -C tickets/output-T-1' }, /under tickets\//],
+    ['Bash', { command: 'unzip -o recording.zip -d tickets/output-T-1' }, /under tickets\//],
   ];
   for (const [tool, input, re] of blocked) {
     const r = runGuard(dir, hookInput(dir, tool, input));
@@ -165,6 +180,10 @@ test('the hook blocks writes to tickets, receipts, .proven and .claude, and a pe
     ['Bash', { command: 'git log --oneline -- .proven/state tickets' }],
     ['Bash', { command: 'npm test > test-output.txt 2>&1' }],
     ['Bash', { command: 'node bin/proven.js done T-1 2>&1 | tail -5' }],
+    ['Bash', { command: 'cp tickets/T-1.md /tmp/proven-copy.md' }],
+    ['Bash', { command: 'mkdir -p demo/app/img && touch demo/app/img/logo.svg && rm demo/app/old.js' }],
+    ['Bash', { command: "sed -n '1,5p' tickets/T-1_test.md" }],
+    ['Bash', { command: 'tar -tf recording.tar' }],
   ];
   for (const [tool, input] of allowed) {
     const r = runGuard(dir, hookInput(dir, tool, input));

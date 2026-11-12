@@ -125,7 +125,7 @@ export function ticketCard(root, id) {
     const prev = state.reopened.previous ?? {};
     card.reopened = {
       at: state.red.commit,
-      replay_one_liner: state.reopened.replay?.kane_one_liner ?? null,
+      first_run_one_liner: state.reopened.first_run?.kane_one_liner ?? null,
       previous_receipt_sha256: prev.receipt_sha256 ?? null,
       previous_green: prev.green_commit ?? null,
     };

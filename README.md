@@ -54,9 +54,11 @@ Proven serves the app itself while Kane runs, on the start URL's port (8091 here
 `proven init` writes three files, which are already committed in this repository:
 
 - `.claude/hooks/proven-guard.mjs`, run by a PreToolUse hook in `.claude/settings.json` before every Write, Edit,
-  MultiEdit, NotebookEdit and Bash call. It blocks changes under `tickets/`, `receipts/`, `.proven/` and `.claude/`, and
-  the commands `proven new`, `proven freeze` and `proven red`, which are a person's steps. It exits with code 2 and
-  says why on stderr, which Claude Code shows to the agent.
+  MultiEdit, NotebookEdit and Bash call. It blocks changes under `tickets/` (where Kane also keeps its recordings),
+  `receipts/`, `.proven/` and `.claude/`, by the file tools or by the usual shell ways (`>`, `tee`, `cp`, `mv`, `ln`,
+  `rsync`, `mkdir`, `touch`, `rm`, `sed -i`, `tar -C`, `unzip -d`), and the commands `proven new`, `proven freeze` and
+  `proven red`, which are a person's steps. It exits with code 2 and says why on stderr, which Claude Code shows to the
+  agent.
 - Bash time limits in the same settings (10 minutes), because a Kane run takes a minute or two and `proven done` runs
   in the foreground.
 - A section in `CLAUDE.md`: when the agent believes a ticket is done, it runs `proven done T-N`; it fixes the app,
@@ -128,8 +130,10 @@ Exit codes for `red` and `done`: 0 ok, 1 Kane failed (or, at red, the test alrea
 - Kane judges a snapshot, never the live folder. Proven writes the app folder as a git tree (what a commit would
   hold), serves exactly that on the start URL's port for the whole run, and on a pass commits exactly that tree.
 - Kane's recording (`tickets/output-T-N/`) never decides a verdict, because it is not committed and anyone with a
-  shell can edit it. Proven moves it out of the repository for every run, so Kane authors every step from the frozen
-  test, and puts it back afterwards exactly as it was.
+  shell can edit it. Proven has two defences: it moves the recording out of the repository for every run (and puts it
+  back afterwards exactly as it was), and it passes `--author`, so Kane authors every step even if a recording
+  appears while it runs. Then it checks: a run whose summary shows any replayed or healed step, or whose output folder
+  holds a file Kane did not write during the run, counts as "did not run", never as a pass or a fail.
 - Each test starts by opening the start URL and checking a landmark text. Proven checks that the URL answers HTTP 200
   before Kane starts.
 - Red runs right after freeze, on the commit that locked the test.
@@ -159,6 +163,8 @@ pinned when a ticket is frozen.
 - `recheck` and `verify --replay` run Kane, so they need Kane CLI, Chrome, a login and credits. `recheck` makes one
   run per done ticket and a second one to confirm a failure; `--replay` makes two. So far they have run only against
   the test fake, not against live Kane.
+- `--author` comes from Kane CLI 0.10.4's own help ("re-author every step"); it has not run live yet. If Kane ever
+  rejected it, every run would say "did not run", so nothing could pass by mistake.
 - `recheck` judges the app as committed and refuses while the app folder has uncommitted changes.
 - The tests use a fake Kane through the `PROVEN_KANE_BIN` variable. Every run made that way says so in the output, the
   state and the receipt, and `verify` flags such a receipt.

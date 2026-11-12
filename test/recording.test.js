@@ -9,6 +9,11 @@ import { findCommittedLeaks } from './support/scan.js';
 // FAKE_KANE_RECORDING_PASSES, passes whenever a recording is there, the way a replay of a tampered recording would.
 const TAMPERED = { FAKE_KANE_RECORDING_PASSES: '1' };
 
+function both(r, re) {
+  assert.match(r.stdout, re, `stdout: ${r.stdout}`);
+  assert.match(r.stderr, re, `stderr: ${r.stderr}`);
+}
+
 function plantRecording(repo, id) {
   repo.write(`tickets/output-${id}/Result.md`, '---\nstatus: passed\n---\n\n# tampered: every step passed\n');
   repo.write(`tickets/output-${id}/.internal/meta.json`, '{"note":"tampered"}\n');
@@ -55,7 +60,7 @@ test('recheck cannot be told "still passes" by a tampered recording', async (t) 
   plantRecording(repo, 'T-1');
   const calls = repo.kaneCalls().length;
 
-  const r = await repo.run(['recheck'], { scenario: ['replay-fail', 'red'], env: TAMPERED });
+  const r = await repo.run(['recheck'], { scenario: ['red', 'red'], env: TAMPERED });
   assert.equal(r.code, 1, r.stdout + r.stderr);
   assert.match(r.stdout, /^T-1 reopened at [0-9a-f]{7}/m);
   const runs = repo.kaneCalls().slice(calls);
@@ -68,4 +73,71 @@ test('a run with no recording before leaves none behind', async (t) => {
   const repo = await greenRepo(t);
   assert.equal(repo.exists('tickets/output-T-1'), false);
   assert.equal(readFileSync(join(repo.dir, '.gitignore'), 'utf8').includes('tickets/output-*/'), true);
+});
+
+test('a recording planted while Kane starts cannot decide a verdict: every run makes Kane author every step', async (t) => {
+  const repo = await makeRepo(t);
+  repo.write('tickets/T-1.md', couponTicket(repo.url));
+  assert.equal((await repo.run(['freeze', 'T-1'])).code, 0);
+  const PLANTED = { FAKE_KANE_PLANTED_MIDRUN: '1' };
+
+  let r = await repo.run(['red', 'T-1'], { scenario: 'red', env: PLANTED });
+  assert.equal(r.code, 0, r.stdout + r.stderr);
+  assert.equal(repo.json('.proven/state/T-1.json').status, 'red');
+  r = await repo.run(['done', 'T-1'], { scenario: 'red', env: PLANTED });
+  assert.equal(r.code, 1, r.stdout + r.stderr);
+  assert.equal(repo.exists('receipts/T-1.json'), false);
+  fixCoupon(repo);
+  assert.equal((await repo.run(['done', 'T-1'], { scenario: 'green', env: PLANTED })).code, 0);
+  r = await repo.run(['verify', 'receipts/T-1.json', '--replay'], { scenario: ['red', 'green'], env: PLANTED });
+  assert.equal(r.code, 0, r.stdout);
+
+  for (const call of repo.kaneCalls()) {
+    assert.ok(call.extra_args.includes('--author'), `a ${call.scenario} run without --author`);
+    assert.equal(call.planted, true);
+    assert.equal(call.replayed, false);
+  }
+  assert.equal(repo.exists('tickets/output-T-1'), false, 'what was planted during the run is gone too');
+});
+
+test('a run whose events show a replay does not count, whatever Kane concluded', async (t) => {
+  const repo = await makeRepo(t);
+  repo.write('tickets/T-1.md', couponTicket(repo.url));
+  assert.equal((await repo.run(['freeze', 'T-1'])).code, 0);
+  const REPLAYS = { FAKE_KANE_REPLAYS: '1' };
+
+  let r = await repo.run(['red', 'T-1'], { scenario: 'red', env: REPLAYS });
+  assert.equal(r.code, 2, r.stdout + r.stderr);
+  assert.match(r.stderr, /^did not run: Kane replayed 2 recorded steps instead of authoring every step, so this run does not count$/m);
+  assert.equal(repo.exists('.proven/state/T-1.json'), false);
+
+  assert.equal((await repo.run(['red', 'T-1'], { scenario: 'red' })).code, 0);
+  fixCoupon(repo);
+  r = await repo.run(['done', 'T-1'], { scenario: 'green', env: REPLAYS });
+  assert.equal(r.code, 2, r.stdout + r.stderr);
+  both(r, /did not run: Kane replayed 2 recorded steps instead of authoring every step, so this run does not count/);
+  both(r, /No attempt was counted\./);
+  assert.equal(repo.exists('receipts/T-1.json'), false);
+  assert.equal(repo.json('.proven/state/T-1.json').attempts, 0);
+
+  assert.equal((await repo.run(['done', 'T-1'], { scenario: 'green' })).code, 0);
+  r = await repo.run(['recheck'], { scenario: 'green', env: REPLAYS });
+  assert.equal(r.code, 2, r.stdout);
+  assert.match(r.stdout, /^T-1: Kane did not run: Kane replayed 2 recorded steps instead of authoring every step, so this run does not count\. Nothing changed\.$/m);
+  r = await repo.run(['verify', 'receipts/T-1.json', '--replay'], { scenario: ['red', 'green'], env: REPLAYS });
+  assert.equal(r.code, 0, r.stdout);
+  assert.match(r.stdout, /^ {2}skip {2}replay skipped: Kane replayed 2 recorded steps instead of authoring every step, so this run does not count$/m);
+});
+
+test('a run that leaves files in the output folder from before it started does not count', async (t) => {
+  const repo = await makeRepo(t);
+  repo.write('tickets/T-1.md', couponTicket(repo.url));
+  assert.equal((await repo.run(['freeze', 'T-1'])).code, 0);
+  assert.equal((await repo.run(['red', 'T-1'], { scenario: 'red' })).code, 0);
+  fixCoupon(repo);
+  const r = await repo.run(['done', 'T-1'], { scenario: 'green', env: { FAKE_KANE_STALE_FILE: '1' } });
+  assert.equal(r.code, 2, r.stdout + r.stderr);
+  both(r, /did not run: tickets\/output-T-1\/ holds a file Kane did not write in this run \(planted\.txt\), so this run does not count/);
+  assert.equal(repo.exists('receipts/T-1.json'), false);
+  assert.equal(repo.exists('tickets/output-T-1'), false);
 });
