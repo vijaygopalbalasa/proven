@@ -68,7 +68,7 @@ function render() {
 document.getElementById('coupon-form').addEventListener('submit', (event) => {
   event.preventDefault();
   const code = document.getElementById('coupon').value.trim();
-  const percent = coupons[code];
+  const percent = coupons[code.toLowerCase()];
   const message = document.getElementById('coupon-message');
   if (percent) {
     couponPercent = percent;
