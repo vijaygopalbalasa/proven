@@ -4,7 +4,7 @@
 // blocks the call and shows the reason on stderr to the agent. Exit code 0 lets it through.
 //
 // It blocks the agent from changing files under tickets/ (which holds Kane's recordings, tickets/output-T-N/),
-// receipts/, .proven/ and .claude/, and from running proven new, proven freeze or proven red, which are a person's
+// receipts/, .proven/ and .claude/, and from running proven new, proven freeze, proven red or proven loop, which are a person's
 // steps. For shell commands it fails closed where it can: a command that writes files is blocked when any of its
 // arguments points into those folders, whichever argument the command would write to. It is defence in depth, not a
 // sandbox: an agent with a shell can still get around it. That is why Proven shows a ticket as done only for a
@@ -14,7 +14,7 @@ import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'nod
 import { pathToFileURL } from 'node:url';
 
 export const PROTECTED = ['tickets', 'receipts', '.proven', '.claude'];
-export const PERSON_STEPS = ['new', 'freeze', 'red'];
+export const PERSON_STEPS = ['new', 'freeze', 'red', 'loop'];
 // Programs that run another program named later on the line.
 const WRAPPERS = new Set([
   'node', 'npx', 'npm', 'pnpm', 'yarn', 'bun', 'bunx', 'env', 'sudo', 'doas', 'time', 'exec', 'command', 'builtin',
@@ -158,7 +158,7 @@ function programIndex(words, matches) {
   return words.findIndex((w, j) => j > i && matches(w));
 }
 
-// The person's step a simple command runs (new, freeze or red), or null.
+// The person's step a simple command runs (new, freeze, red or loop), or null.
 export function personStep(words) {
   const at = programIndex(words, isProven);
   if (at < 0) return null;

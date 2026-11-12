@@ -9,6 +9,7 @@ import { cmdVerify } from './commands/verify.js';
 import { cmdRecheck } from './commands/recheck.js';
 import { cmdInit } from './commands/init.js';
 import { cmdBoard } from './commands/board.js';
+import { cmdLoop } from './commands/loop.js';
 
 export const USAGE = `proven: a ticket closes only when Kane CLI saw it fail before the change and pass after it.
 
@@ -20,6 +21,7 @@ export const USAGE = `proven: a ticket closes only when Kane CLI saw it fail bef
   proven verify receipts/T-N.json --replay
                                      and run Kane again with the app at red (must fail) and at green (must pass)
   proven recheck [T-N ...]           run every done ticket's test again; reopen one whose failure a second run confirms
+  proven loop [T-N ...]              hand each red ticket to the coding agent, show the agent and Kane live, recheck at the end (person)
   proven init                        write Claude Code guard rails: a PreToolUse hook and a CLAUDE.md section
   proven board [--port 8090] [--judge]
                                      a local page with every ticket's evidence, updated live
@@ -27,9 +29,11 @@ export const USAGE = `proven: a ticket closes only when Kane CLI saw it fail bef
 Kane is always kane-cli from PATH. Settings live in .proven/config.json (app, timeout_s, max_attempts)
 and are pinned when a ticket is frozen.
 Exit codes for red and done: 0 ok, 1 Kane failed (or already passes at red), 2 did not run.
-Exit codes for recheck: 0 all still pass, 1 a ticket reopened, 2 something did not run.`;
+Exit codes for recheck: 0 all still pass, 1 a ticket reopened, 2 something did not run.
+Exit codes for loop: 0 all done and the last recheck passes, 1 a ticket needs a person, the agent stopped without a green
+or the last recheck reopened one, 2 something did not run. The agent command is in .proven/agent.json (optional).`;
 
-const COMMANDS = { new: cmdNew, freeze: cmdFreeze, red: cmdRed, done: cmdDone, verify: cmdVerify, recheck: cmdRecheck, init: cmdInit, board: cmdBoard };
+const COMMANDS = { new: cmdNew, freeze: cmdFreeze, red: cmdRed, done: cmdDone, verify: cmdVerify, recheck: cmdRecheck, loop: cmdLoop, init: cmdInit, board: cmdBoard };
 const VALUE_FLAGS = new Set(['url', 'landmark', 'port']);
 
 export function parseArgs(argv) {

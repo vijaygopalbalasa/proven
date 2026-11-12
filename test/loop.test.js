@@ -15,7 +15,7 @@ const REOPEN_PROMPT = (id) =>
   `proven recheck reopened ${id}. Read tickets/${id}.md and .proven/state/${id}.json for what Kane saw, fix demo/app, then run node bin/proven.js done ${id} and follow what it prints.`;
 
 // A repo with T-1 frozen and red, and .proven/agent.json pointing at the fake agent.
-async function redRepo(t, { agent = [process.execPath, FAKE_AGENT, '--output-format', 'stream-json'], maxAttempts, commitAgent = true } = {}) {
+async function redRepo(t, { agent = [process.execPath, FAKE_AGENT, '--output-format', 'stream-json'], maxAttempts, commitAgent = false } = {}) {
   const repo = await makeRepo(t, { maxAttempts });
   repo.write('tickets/T-1.md', couponTicket(repo.url));
   if (agent) {
