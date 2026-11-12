@@ -26,9 +26,9 @@ test('verify --replay serves the app as it was at red and at green, and Kane agr
   assert.match(r.stdout, /^Kane ran the frozen test again: it failed without the change and passed with it\.$/m);
   assert.match(r.stderr, /Kane: fake \(PROVEN_KANE_BIN\)\. This run is not Kane CLI evidence\./);
 
-  // The same command red and done ran, on exactly the trees the receipt names.
+  // One fresh run per side that authors every step again, on exactly the trees the receipt names.
   const [red, green] = repo.kaneCalls().slice(calls);
-  for (const call of [red, green]) assert.deepEqual(call.args, ['testmd', 'run', 'tickets/T-1_test.md', '--agent', '--headless']);
+  for (const call of [red, green]) assert.deepEqual(call.args, ['testmd', 'run', 'tickets/T-1_test.md', '--agent', '--headless', '--author']);
   const cart = (commit) => sha256(Buffer.from(repo.git('show', `${commit}:demo/app/cart.js`) + '\n'));
   assert.equal(red.fetched['/cart.js'].sha256, cart(receipt.red.commit));
   assert.equal(green.fetched['/cart.js'].sha256, cart(receipt.green.commit));

@@ -87,8 +87,9 @@ id, never from the receipt.
 
 `--replay` re-checks red itself, not only green. Proven serves the app as it was at the red commit and runs Kane on the
 frozen test, which must fail at the recorded step, then serves the app as it was at the green commit, where Kane must
-pass. Either side disagreeing is a MISMATCH. When Kane cannot run (signed out, no network, time limit), the output
-says "replay skipped" with the reason, and the git result stands.
+pass. Each side is one fresh run with `--author`, so Kane works from the frozen test's text, not from a recording.
+Either side disagreeing is a MISMATCH. When Kane cannot run (signed out, no network, time limit), the output says
+"replay skipped" with the reason, and the git result stands.
 
 ## Recheck and reopen
 
@@ -151,8 +152,9 @@ pinned when a ticket is frozen.
 - Evidence packs are not committed, because they carry the runner's name and email. Proven keeps only their sha256.
 - Kane's recording folder (`tickets/output-T-N/`) stays local, because it carries Kane account and session ids. A fresh
   clone records again, so its first replays author every step and cost more credits.
-- `recheck` and `verify --replay` run Kane, so they need Kane CLI, Chrome, a login and credits. The `--author`
-  confirmation and the replays have so far run only against the test fake, not against live Kane.
+- `recheck` and `verify --replay` run Kane, so they need Kane CLI, Chrome, a login and credits (`--replay` makes two
+  fresh runs). Their `--no-adaptive-heal` and `--author` runs have so far run only against the test fake, not against
+  live Kane.
 - `recheck` judges the app as committed and refuses while the app folder has uncommitted changes.
 - The tests use a fake Kane through the `PROVEN_KANE_BIN` variable. Every run made that way says so in the output, the
   state and the receipt, and `verify` flags such a receipt.

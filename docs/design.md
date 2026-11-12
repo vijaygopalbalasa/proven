@@ -152,11 +152,12 @@ files under the app folder, and the start URL must be local with a port (for exa
 ## Replay (4.3)
 
 `verify --replay` runs only when the git checks pass. It takes the frozen test from F, refuses to run when the test
-in the working tree differs (Kane runs on that path), and runs Kane on it twice with the same command red and done
-ran: first with the tree at red (`red.app_tree`) served on the start URL's port, where Kane must fail at the recorded
-step, then with the tree at green, where Kane must pass. Kane replays its local recording if there is one and
-re-authors a step whose replay misses, so a moved button cannot fake a failure; a fresh clone authors every step. A
-side that disagrees makes the result MISMATCH. When Kane does not run, the line says "replay skipped" with the reason
+in the working tree differs (Kane runs on that path), and runs Kane on it twice, each time with `--author` so Kane
+authors every step again from the test's text: first with the tree at red (`red.app_tree`) served on the start URL's
+port, where Kane must fail at the recorded step, then with the tree at green, where Kane must pass. A local recording
+cannot decide the verdict, a fresh clone behaves the same, and Kane's adaptive heal (up to 3 re-authoring attempts on
+a replay miss, then a full re-author) cannot run into the time limit. A side that disagrees makes the result
+MISMATCH. When Kane does not run, the line says "replay skipped" with the reason
 and the git result stands; without a red replay there is nothing to compare, so green is not tried. A replay writes
 nothing to git.
 
