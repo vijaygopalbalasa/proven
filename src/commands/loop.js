@@ -41,9 +41,23 @@ function readStatus(root, id) {
   }
 }
 
-// What the agent just did, from one stream-json line: the tool's name and the file or command it works on. Never the
-// content it writes and never a tool's result.
-function toolLines(line) {
+// What the agent just did, from one stream-json line: the tool's name and the file or command it works on, or a short
+// line of what the agent said. Never the content it writes and never a tool's result. Paths inside the repository are
+// shown relative to it, so the lines stay readable.
+const SAY_CHARS = 160;
+function rootForms(root) {
+  const forms = new Set([root]);
+  try {
+    forms.add(realpathSync(root));
+  } catch {}
+  return [...forms].filter(Boolean).sort((a, b) => b.length - a.length);
+}
+function relativeToRoot(roots, s) {
+  let out = s;
+  for (const r of roots) out = out.split(r + '/').join('');
+  return out;
+}
+function toolLines(line, root) {
   let event;
   try {
     event = JSON.parse(line);
@@ -51,12 +65,17 @@ function toolLines(line) {
     return [];
   }
   if (event?.type !== 'assistant' || !Array.isArray(event.message?.content)) return [];
+  const roots = rootForms(root);
   const lines = [];
   for (const part of event.message.content) {
+    if (part?.type === 'text' && typeof part.text === 'string' && plain(part.text)) {
+      lines.push(`agent says: ${cut(plain(relativeToRoot(roots, part.text)), SAY_CHARS)}`);
+      continue;
+    }
     if (part?.type !== 'tool_use' || typeof part.name !== 'string') continue;
     const input = part.input && typeof part.input === 'object' ? part.input : {};
     const target = [input.file_path, input.notebook_path, input.command, input.path, input.pattern].find((x) => typeof x === 'string' && x);
-    lines.push(`${plain(part.name)}${target ? ' ' + cut(plain(target), TOOL_CHARS) : ''}`);
+    lines.push(`agent: ${plain(part.name)}${target ? ' ' + cut(plain(relativeToRoot(roots, target)), TOOL_CHARS) : ''}`);
   }
   return lines;
 }
@@ -116,7 +135,7 @@ function runAgent(ctx, id, cmd, prompt, streamJson) {
       while ((at = buffered.indexOf('\n')) >= 0) {
         const line = buffered.slice(0, at);
         buffered = buffered.slice(at + 1);
-        for (const l of toolLines(line)) out.say(`${id} agent: ${l}`);
+        for (const l of toolLines(line, root)) out.say(`${id} ${l}`);
       }
     };
     child.stdout.on('data', feed);
@@ -127,7 +146,7 @@ function runAgent(ctx, id, cmd, prompt, streamJson) {
     });
     child.on('close', (code, signal) => {
       clearInterval(timer);
-      if (streamJson && buffered.trim()) for (const l of toolLines(buffered)) out.say(`${id} agent: ${l}`);
+      if (streamJson && buffered.trim()) for (const l of toolLines(buffered, root)) out.say(`${id} ${l}`);
       poll();
       resolve({ code, signal });
     });
