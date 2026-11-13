@@ -3,7 +3,7 @@
 **A ticket closes only when Kane CLI saw its frozen test fail before the change and pass after it.**
 
 Coding agents say "done" before it is true. With Proven, a person freezes a ticket's acceptance test first. Kane must
-fail it on the code as it is, then pass the same unchanged test after the agent's change. Only Proven goes on checking:
+fail it on the code as it is, then pass the same unchanged test after the agent's change. Proven also keeps checking:
 it re-runs Kane on every closed ticket, and a later change that breaks one gets it reopened by a fresh Kane run and
 handed back to the agent, with no person in between.
 
@@ -22,13 +22,13 @@ npm start          # then open http://127.0.0.1:8090/
 What Kane caught in the recorded run (a demo shop with coupon codes):
 
 - Before any change, Kane failed the frozen test for the right reason: "The cart rejects the required FALL15 coupon, so the order total remains $30.00 instead of $26.25."
-- The agent's fix for that ticket broke an older one. A fresh Kane run failed twice on it: "The cart rejects the valid SAVE10 coupon, so the order total remains $30.00 instead of $27.50." The older ticket reopened by itself. (The demo tickets are written so this happens; see "Honest disclosure" below.)
+- The agent's fix for that ticket broke an older one. A fresh Kane run failed it, and a second fresh run agreed: "The cart rejects the valid SAVE10 coupon, so the order total remains $30.00 instead of $27.50." The older ticket reopened by itself. (The demo tickets are written so this happens; see "Honest disclosure" below.)
 - The loop handed it back, the agent fixed it, Kane passed it, and `proven verify --replay` ran Kane again at red and at green: CONFIRMED.
 
 ## For judges
 
-1. **See it (30 seconds).** `npm start` shows the board over the receipts committed here. Each card was re-checked with
-   git just now. Needs Node.js 22 or newer. No install, no login.
+1. **See it (30 seconds).** `npm start` shows the board over the receipts committed here. Each card's receipt is re-checked
+   with git when the board loads. Needs Node.js 22 or newer. No install, no login.
 2. **Run the tests.** `npm test` runs 151 tests, every command end to end, on a fake Kane (no login).
 3. **Verify a receipt.** `node bin/proven.js verify receipts/T-1.json` checks it with git alone, no network. With a Kane
    login, add `--replay` and Kane runs the frozen test again with the app at red (must fail) and at green (must pass).
@@ -51,8 +51,8 @@ What Kane caught in the recorded run (a demo shop with coupon codes):
 
 T-3 was written on purpose so that its plain reading (take the coupon codes from `coupons.json`) breaks T-1 (requirement
 8.1 in [docs/requirements.md](docs/requirements.md)). The agent took that reading on its own in all three live runs that day: two rehearsals in throwaway copies (their logs
-are not in this repo) and the filmed run recorded here. The recheck reopened T-1 each time: rehearsal 1 at `a51f39f`,
-rehearsal 2 at `ed46d29`, the filmed run at `fb9d347`. Each reopen was a fresh run that failed, then a second fresh run
+are not in this repo) and the filmed run recorded here. The recheck reopened T-1 each time: rehearsal 1 at `a51f39f` and
+rehearsal 2 at `ed46d29` (both commits are from those throwaway copies), the filmed run at `fb9d347`. Each reopen was a fresh run that failed, then a second fresh run
 that failed again. So the reopen is real, but it is not a surprise: the demo is built to show it.
 
 ## The recorded run
