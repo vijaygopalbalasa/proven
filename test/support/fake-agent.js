@@ -11,7 +11,7 @@ import { appendFileSync, readFileSync, writeFileSync } from 'node:fs';
 const argv = process.argv.slice(2);
 const prompt = argv.at(-1) ?? '';
 const id = /\bT-\d+\b/.exec(prompt)?.[0];
-appendFileSync(process.env.FAKE_AGENT_LOG, JSON.stringify({ argv, cwd: process.cwd(), id }) + '\n');
+appendFileSync(process.env.FAKE_AGENT_LOG, JSON.stringify({ argv, cwd: process.cwd(), id, abbrev: process.env.GIT_TEST_DISALLOW_ABBREVIATED_OPTIONS }) + '\n');
 
 const emit = (content) => process.stdout.write(JSON.stringify({ type: 'assistant', message: { content } }) + '\n');
 const SECRET_BODY = 'FILE-CONTENT-THAT-MUST-NOT-BE-PRINTED';

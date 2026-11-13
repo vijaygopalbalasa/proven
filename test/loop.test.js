@@ -434,3 +434,10 @@ test('loop: a Kane program that changed since the loop started is not run again'
   const ok = await repo2.run(['loop', '--agent-config'], { scenario: ['green', 'green'], env: { ...agentEnv(repo2), PROVEN_KANE_BIN: wrapper, FAKE_AGENT_KANE_FILE: wrapper } });
   assert.equal(ok.code, 0, ok.stdout + ok.stderr);
 });
+
+test('loop: the agent gets GIT_TEST_DISALLOW_ABBREVIATED_OPTIONS=1', async (t) => {
+  const repo = await redRepo(t);
+  const r = await repo.run(['loop', '--agent-config'], { scenario: ['green', 'green'], env: agentEnv(repo) });
+  assert.equal(r.code, 0, r.stdout + r.stderr);
+  assert.equal(agentCalls(repo)[0].abbrev, '1');
+});

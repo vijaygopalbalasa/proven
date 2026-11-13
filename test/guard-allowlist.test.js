@@ -15,10 +15,9 @@ test('allowlist: the commands the agent really used in the live rehearsal stay a
     'proven done T-3',
     'node bin/proven.js done T-1 2>&1 | tail -5',
     'node bin/proven.js done T-1 2>/dev/null',
-    'grep -rn "total$" demo/app',
+    "grep -rn 'total$' demo/app",
     'sed -n \'1,5p\' tickets/T-1_test.md',
     'sed -n -e \'/coupon/p\' demo/app/cart.js',
-    'awk \'{print $1}\' demo/app/coupons.json',
     'git status',
     'git diff HEAD -- demo/app',
     'git show HEAD --stat',
@@ -60,4 +59,46 @@ test('allowlist: everything else is blocked, and the message names the segment a
   const why = call('curl http://x; cat a');
   assert.match(why, /curl http:\/\/x/);
   assert.match(why, /may only read files, edit the app with its edit tools, and run proven done/);
+});
+
+test('allowlist: each read-only program allows only its safe flags, and an unknown or abbreviated flag is blocked', () => {
+  const allowed = [
+    'cat -n a', 'head -n 5 a', 'head -5 a', 'head -c 20 a', 'tail -n 5 a', 'tail -20 a', 'ls -la demo', 'ls -R -1 -h', 'ls -A', 'wc -l a', 'wc -lw a',
+    'grep -n -i -r coupon demo', 'grep -rni coupon demo', 'grep -A 2 -B2 -C 3 -e coupon a', 'grep -c -E "a|b" a', 'grep --include=*.js -r x .'.replace('*.js', '"*.js"'),
+    'grep --color=never -w -v -H x a', 'rg -n -i -l x demo', 'rg -g "*.js" -A 2 --no-heading x', 'rg -nil x',
+    'find demo -type f -name "*.js" -maxdepth 2 -print', "find demo '(' -name a -o -name b ')'", "find demo '!' -path x -a -iname y", 'find demo -mindepth 1 -ipath "*x*"',
+    'sort -n -r -u a', 'sort -k 2 -t , a', 'sort -nr a', 'uniq -c a', 'uniq -d', 'diff -u a b', 'diff -rq a b', 'jq -r . a', 'jq -c -S . a', 'tree -L 2 -a -d', 'tree -L2',
+    'echo hi there', 'pwd', 'file a', 'stat a',
+    'git log --oneline -n 5', 'git log -5 --stat --graph --decorate --all', 'git log --format=%h -- demo', 'git log --pretty=oneline --name-only -- a b', 'git log -p --name-status',
+    'git show --stat HEAD', 'git show --name-only --format=%s HEAD', 'git diff --stat --cached', 'git diff -U 5 --no-color -- demo', 'git diff --name-status --staged',
+    'git status -s -b', 'git status --porcelain', 'git rev-parse --short HEAD', 'git rev-parse --abbrev-ref HEAD', 'git rev-parse --show-toplevel', 'git ls-files -- demo',
+    'git blame -L 1,5 demo/app/cart.js', 'git grep -n -i -e coupon -w -l', 'git cat-file -p HEAD', 'git cat-file -t HEAD', 'git branch --list',
+  ];
+  for (const command of allowed) assert.equal(call(command), null, command);
+
+  const blocked = [
+    'sort --out=f a', 'sort --outp=f a', 'git diff --outp=f', 'git log --ext-d', 'git log --output=f', 'git diff --ext-diff', 'git show --textconv x', 'git log --format', 'git grep -O sh x', 'git grep --open-files-in-pager=sh x',
+    'cat -v a', 'cat --number a', 'head -q a', 'tail -f a', 'tail --follow a', 'ls -S', 'ls --recursive', 'ls -lZ', 'wc -m a', 'grep -P x a', 'grep -f pats a', 'grep --exclude-dir=x -r y .', 'grep -z x a',
+    'rg --pre sh x', 'rg --files', 'rg -u x', 'find . -newer a', 'find . -regex x', 'find . -fprint x', 'find . -printf x', 'find . -exec x', 'sort -T /tmp a', 'sort -S 1G a', 'uniq -f 1 a', 'diff -y a b', 'diff --to-file=x a', 'jq -f x a', 'jq --arg a b . c', 'tree -o f', 'tree --du',
+    'echo -n x', 'echo -e x', 'pwd -P', 'file -C', 'file -m x a', 'stat -f x a', 'awk 1 a', 'awk "{print}" a',
+    'git log --all-match', 'git log --graph-x', 'git status -u', 'git rev-parse --git-dir', 'git ls-files -o', 'git ls-files -z', 'git blame -w a', 'git cat-file --batch', 'git branch -a', 'git show -s HEAD', 'git diff --patch', 'git diff -w',
+  ];
+  for (const command of blocked) assert.match(call(command) ?? '', /Proven: /, `should be blocked: ${command}`);
+  assert.match(call('sort -z a'), /the guard allows only these flags for sort: .*-n/);
+  assert.match(call('git diff --outp=f'), /the guard allows only these flags for git diff: .*--stat/);
+});
+
+test('allowlist: the lexer is strict, and an unquoted word may hold only letters, digits and _ . / : = , @ % + -', () => {
+  const blocked = [
+    'find . -{exec,}', 'ls *', 'ls ?', 'ls [a]', 'cat a#b', 'cat a #c', "echo $'x'", 'echo $"x"', 'grep "$(id)" f', 'grep "a$b" f', 'grep "`id`" f', 'ls ~', 'cat {a,b}', 'cat a\ b', 'echo !x', 'echo a^b', 'cat a<b', 'cat a>b',
+    'echo $HOME', "echo '$HOME' $X", 'cat a & cat b', 'echo "a" "b$"', 'cat "a" > out', 'ls ../a;rm -rf x',
+  ];
+  for (const command of blocked) assert.match(call(command) ?? '', /Proven: /, `should be blocked: ${command}`);
+  for (const command of [
+    'find demo/app -type f | head -50 && cat .proven/state/T-3.json',
+    'cat demo/app/cart.js demo/app/coupons.json; grep -n -i "coupon\\|total\\|ship" demo/app/index.html; git log --oneline -8 -- demo/app',
+    'cat tickets/T-1.md .proven/state/T-1.json; ls -R demo/app | head -50',
+    'node bin/proven.js done T-1',
+    "grep -n 'a$' demo/app/cart.js", 'grep -n "a b" demo/app/cart.js', 'cat a,b:c=d@e%f+g-h_i.j/k',
+  ]) assert.equal(call(command), null, command);
 });
