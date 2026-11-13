@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process';
-import { accessSync, constants, lstatSync, readdirSync, readFileSync, readlinkSync, realpathSync } from 'node:fs';
-import { delimiter, join } from 'node:path';
+import { accessSync, constants, existsSync, lstatSync, readdirSync, readFileSync, readlinkSync, realpathSync } from 'node:fs';
+import { delimiter, dirname, join } from 'node:path';
 import { kaneCommand } from '../config.js';
 import { canonicalJson, sha256 } from '../hash.js';
 import { bypassFlag, loadAgentCommand, wantsStreamJson, AGENT_PATH } from '../agent.js';
@@ -192,7 +192,10 @@ function changedOwn(root, paths) {
 
 // Everything whose change would change the judge or what Proven trusts, hashed byte for byte, ignored files included.
 // Kane's recordings under tickets/output-* are the one thing proven done writes there, and they are never trusted.
-const HASHED = ['bin', 'src', 'package.json', 'package-lock.json', '.claude', 'test', 'node_modules', 'tickets', '.proven/config.json', '.git/info/exclude', '.git/config', '.git/hooks', '.git/info/grafts', '.git/info/attributes', '.git/objects/info/alternates'];
+const HASHED = ['bin', 'src', 'package.json', 'package-lock.json', '.claude', 'test', 'node_modules', 'tickets', '.proven/config.json', '.git/objects/info/alternates', '.git/objects/info/http-alternates'];
+// The whole .git directory is hashed too, except what git itself rewrites all the time (objects, logs, the index) and
+// the refs, which for-each-ref covers.
+const GIT_SKIP = new Set(['objects', 'logs', 'index', 'refs', 'packed-refs']);
 const SKIP_DIRS = new Set(['.git', 'node_modules', '.testmuai']);
 
 function hashTree(root) {
@@ -212,6 +215,20 @@ function hashTree(root) {
     } else if (!ignoreFiles || name === '.gitignore' || name === '.gitattributes') map.set(rel, sha256(readFileSync(join(root, rel))));
   };
   for (const rel of HASHED) visit(rel);
+  const visitGit = (rel, top) => {
+    let st;
+    try {
+      st = lstatSync(join(root, rel));
+    } catch {
+      return;
+    }
+    const name = rel.split('/').at(-1);
+    if (top && (GIT_SKIP.has(name) || name.startsWith('proven-index-') || name.startsWith('index.'))) return;
+    if (st.isSymbolicLink()) map.set(rel, `link:${readlinkSync(join(root, rel))}`);
+    else if (st.isDirectory()) for (const child of readdirSync(join(root, rel)).sort()) visitGit(`${rel}/${child}`, rel === '.git');
+    else map.set(rel, sha256(readFileSync(join(root, rel))));
+  };
+  visitGit('.git', false);
   // Every .gitignore in the project decides what git leaves out.
   const walk = (rel) => {
     for (const child of readdirSync(join(root, rel || '.')).sort()) {
@@ -250,13 +267,31 @@ function refsDiff(before, after) {
   return out;
 }
 
-// The Kane program: where kane-cli (or the test fake) is, with symlinks followed, and a hash of that entry file.
-function kaneIdentity() {
-  const { command } = kaneCommand();
+// Every file under a directory, sorted, symlinks not followed, as one hash.
+function hashDir(dir) {
+  const lines = [];
+  const walk = (rel) => {
+    for (const child of readdirSync(join(dir, rel)).sort()) {
+      const path = rel ? `${rel}/${child}` : child;
+      const st = lstatSync(join(dir, path));
+      if (st.isSymbolicLink()) lines.push(`${path}\0link:${readlinkSync(join(dir, path))}`);
+      else if (st.isDirectory()) walk(path);
+      else lines.push(`${path}\0${sha256(readFileSync(join(dir, path)))}`);
+    }
+  };
+  walk('');
+  return sha256(Buffer.from(lines.join('\n')));
+}
+
+// The Kane program: where kane-cli is, symlinks followed, and a hash of its whole package directory (the nearest folder
+// above the entry file that has a package.json; the entry file alone if there is none). The test fake is hashed as
+// its script. A null hash means it could not be found or read, which counts as a failure.
+export function kaneIdentity(kane = kaneCommand(), env = process.env) {
+  const { command } = kane;
   const entry = command[0] === process.execPath && command[1] ? command[1] : command[0];
   let path = entry.includes('/') ? entry : null;
   if (!path) {
-    for (const dir of (process.env.PATH ?? '').split(delimiter).filter(Boolean)) {
+    for (const dir of (env.PATH ?? '').split(delimiter).filter(Boolean)) {
       try {
         accessSync(join(dir, entry), constants.X_OK);
         if (lstatSync(join(dir, entry)).isDirectory()) continue;
@@ -268,7 +303,16 @@ function kaneIdentity() {
   if (!path) return { path: entry, hash: null };
   try {
     const real = realpathSync(path);
-    return { path: real, hash: sha256(readFileSync(real)) };
+    let pkg = null;
+    if (!kane.fake) {
+      for (let dir = dirname(real); dir !== dirname(dir); dir = dirname(dir)) {
+        if (existsSync(join(dir, 'package.json'))) {
+          pkg = dir;
+          break;
+        }
+      }
+    }
+    return { path: real, hash: pkg ? hashDir(pkg) : sha256(readFileSync(real)) };
   } catch {
     return { path, hash: null };
   }
@@ -356,6 +400,9 @@ const OPEN = new Set(['red', 'in-progress', 'reopened']);
 export async function cmdLoop(ctx, ids, flags = {}) {
   const { root, out } = ctx;
   ids.forEach(checkId);
+  if (lstatSync(join(root, '.git')).isFile()) {
+    throw new Refusal('proven loop does not run where .git is a file (a git worktree or a submodule). Run it in the main clone of the repository.');
+  }
   const { command: cmd, fromFile } = loadAgentCommand(root);
   const bypass = bypassFlag(cmd);
   if (bypass) throw new Refusal(`proven loop refuses an agent command that skips permission checks (${bypass}). Proven never runs one.`);
@@ -397,6 +444,10 @@ export async function cmdLoop(ctx, ids, flags = {}) {
   }
 
   const kaneBefore = kaneIdentity();
+  if (kaneBefore.hash === null) {
+    out.both(`did not run: the Kane program ${kaneBefore.path} could not be found or read. Install Kane CLI first.`);
+    return 2;
+  }
   for (let round = 0; ; round++) {
     let stopped = stuck;
     const closed = [];
@@ -414,8 +465,12 @@ export async function cmdLoop(ctx, ids, flags = {}) {
     // Nothing a session says is taken as the verdict: Kane runs again, from this process's own code, on every done
     // ticket, including the ones the agent just closed.
     const kaneNow = kaneIdentity();
-    if (kaneNow.path !== kaneBefore.path || kaneNow.hash !== kaneBefore.hash) {
-      out.both(`did not run: the Kane program ${kaneNow.path} changed since the loop started. Nothing was rechecked.`);
+    if (kaneNow.hash === null || kaneNow.path !== kaneBefore.path || kaneNow.hash !== kaneBefore.hash) {
+      out.both(
+        kaneNow.hash === null
+          ? `did not run: the Kane program ${kaneNow.path} could not be found or read. Nothing was rechecked.`
+          : `did not run: the Kane program ${kaneNow.path} changed since the loop started. Nothing was rechecked.`,
+      );
       return 2;
     }
     const recheckResults = new Map();

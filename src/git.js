@@ -5,16 +5,65 @@ import { randomBytes } from 'node:crypto';
 import { Refusal } from './errors.js';
 
 // Every git command Proven makes runs with replace objects switched off and without system or global config, so a
-// refs/replace ref or a config the agent does not control cannot change what a commit, tree or file looks like.
-export function gitEnv(base = process.env, extra = {}) {
-  return { ...base, GIT_NO_REPLACE_OBJECTS: '1', GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: '/dev/null', ...extra };
+// refs/replace ref or a config the agent does not control cannot change what a commit, tree or file looks like. It is
+// also pinned to the repository's own .git (resolved once, at startup) and carries the person's identity.
+const pinned = new Map();
+const identities = new Map();
+
+const plainGit = (root, args) => {
+  try {
+    return execFileSync('git', args, { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+  } catch {
+    return '';
+  }
+};
+
+// The absolute .git of this repository, found once with plain git, before anything else can change it.
+export function pinGitDir(root) {
+  if (pinned.has(root)) return pinned.get(root);
+  const dir = plainGit(root, ['rev-parse', '--absolute-git-dir']);
+  if (dir) pinned.set(root, dir);
+  return dir || null;
+}
+
+// The identity commits use. Proven runs git without the global config, so what the repository lacks is read once from
+// the person's global git config, with plain git, and passed as environment variables.
+export function readIdentity(root) {
+  if (identities.has(root)) return identities.get(root);
+  const env = {};
+  const missing = [];
+  for (const [key, who] of [['name', 'NAME'], ['email', 'EMAIL']]) {
+    const local = plainGit(root, ['config', '--local', '--get', `user.${key}`]);
+    if (local) continue;
+    const global = plainGit(root, ['config', '--global', '--get', `user.${key}`]);
+    if (global) Object.assign(env, { [`GIT_AUTHOR_${who}`]: global, [`GIT_COMMITTER_${who}`]: global });
+    else missing.push(`user.${key}`);
+  }
+  const value = { env, missing };
+  identities.set(root, value);
+  return value;
+}
+
+function requireIdentity(root) {
+  const { missing } = readIdentity(root);
+  if (missing.length) {
+    throw new Refusal(
+      `Git has no user.name and user.email for this repository (missing: ${missing.join(', ')}), and Proven does not use other git settings while it works. Set them inside this repository: git config user.name "Your Name" and git config user.email "<your email>".`,
+    );
+  }
+}
+
+export function gitEnv(base = process.env, extra = {}, root) {
+  const identity = root ? identities.get(root)?.env : null;
+  const dir = root ? pinned.get(root) : null;
+  return { ...base, GIT_NO_REPLACE_OBJECTS: '1', GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: '/dev/null', ...(identity ?? {}), ...(dir ? { GIT_DIR: dir } : {}), ...extra };
 }
 
 export function git(root, args, { env, input, buffer = false, allowFail = false } = {}) {
   try {
     const result = execFileSync('git', args, {
       cwd: root,
-      env: gitEnv(env ?? process.env),
+      env: gitEnv(env ?? process.env, {}, root),
       input,
       stdio: ['pipe', 'pipe', 'pipe'],
       maxBuffer: 512 * 1024 * 1024,
@@ -50,7 +99,7 @@ export function resolveCommit(root, ref) {
 }
 
 export function isAncestor(root, ancestor, descendant) {
-  const result = spawnSync('git', ['merge-base', '--is-ancestor', ancestor, descendant], { cwd: root, stdio: 'ignore', env: gitEnv() });
+  const result = spawnSync('git', ['merge-base', '--is-ancestor', ancestor, descendant], { cwd: root, stdio: 'ignore', env: gitEnv(process.env, {}, root) });
   if (result.status === 0) return true;
   if (result.status === 1) return false;
   throw new Error(`git could not compare ${short(ancestor)} and ${short(descendant)}`);
@@ -93,7 +142,7 @@ export function dirtyPaths(root, path) {
 }
 
 export function isIgnored(root, path) {
-  const result = spawnSync('git', ['check-ignore', '-q', '--no-index', path], { cwd: root, stdio: 'ignore', env: gitEnv() });
+  const result = spawnSync('git', ['check-ignore', '-q', '--no-index', path], { cwd: root, stdio: 'ignore', env: gitEnv(process.env, {}, root) });
   return result.status === 0;
 }
 
@@ -150,6 +199,7 @@ function pathKnown(root, headSha, p) {
 // person has staged stays staged and out of this commit. `excludes` are pathspecs to leave out.
 // Returns { commit, created }. If nothing changed, returns HEAD with created false.
 export function commitPaths(root, { paths, excludes = [], message, allowEmpty = false }) {
+  requireIdentity(root);
   const headSha = head(root);
   const gitDir = git(root, ['rev-parse', '--absolute-git-dir']).trim();
   const tmpIndex = join(gitDir, `proven-index-${process.pid}-${randomBytes(4).toString('hex')}`);
@@ -182,6 +232,7 @@ export function commitPaths(root, { paths, excludes = [], message, allowEmpty = 
 // Commit HEAD's tree with `path` replaced by an existing tree id, so the commit holds exactly that tree for the
 // path, built from the tree itself and not from the working tree. Returns HEAD unchanged if it already holds it.
 export function commitTreeAtPath(root, { path, tree, message }) {
+  requireIdentity(root);
   const headSha = head(root);
   if (headSha && objectAt(root, headSha, path) === tree) return { commit: headSha, created: false };
   const gitDir = git(root, ['rev-parse', '--absolute-git-dir']).trim();

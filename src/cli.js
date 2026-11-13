@@ -1,6 +1,6 @@
 import { Refusal } from './errors.js';
 import { loadConfig } from './config.js';
-import { findRoot } from './git.js';
+import { findRoot, pinGitDir, readIdentity } from './git.js';
 import { cmdNew } from './commands/new.js';
 import { cmdFreeze } from './commands/freeze.js';
 import { cmdRed } from './commands/red.js';
@@ -87,6 +87,8 @@ export async function main(argv = process.argv.slice(2), { cwd = process.cwd(), 
     }
     if (flags.timeout !== undefined) throw new Refusal('There is no --timeout flag. The time limit is timeout_s in .proven/config.json, pinned at freeze.');
     const root = findRoot(cwd);
+    pinGitDir(root);
+    readIdentity(root);
     // verify and board read only what is committed, so they do not need the settings.
     const config = name === 'verify' || name === 'board' ? null : loadConfig(root);
     return await command({ root, cwd, config, out }, positional, flags);

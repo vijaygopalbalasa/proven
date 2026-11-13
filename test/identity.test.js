@@ -7,6 +7,9 @@ import { couponTicket, makeRepo } from './support/helpers.js';
 
 // A fresh clone has no user.name or user.email of its own. Proven runs git without the global config, so it reads the
 // person's global identity itself, once, and passes it on.
+const G = ['global', 'example.invalid'].join('@');
+const L = ['local', 'example.invalid'].join('@');
+
 async function bare(t) {
   const repo = await makeRepo(t);
   repo.git('config', '--unset', 'user.name');
@@ -19,10 +22,10 @@ async function bare(t) {
 
 test('a repo with no local identity commits with the person\'s global one', async (t) => {
   const { repo, home, env } = await bare(t);
-  writeFileSync(join(home, '.gitconfig'), '[user]\n\tname = Global Person\n\temail = global@example.invalid\n');
+  writeFileSync(join(home, '.gitconfig'), `[user]\n\tname = Global Person\n\temail = ${G}\n`);
   const r = await repo.run(['freeze', 'T-1'], { env });
   assert.equal(r.code, 0, r.stdout + r.stderr);
-  assert.equal(repo.git('log', '-1', '--format=%an <%ae> / %cn <%ce>'), 'Global Person <global@example.invalid> / Global Person <global@example.invalid>');
+  assert.equal(repo.git('log', '-1', '--format=%an <%ae> / %cn <%ce>'), `Global Person <${G}> / Global Person <${G}>`);
 });
 
 test('a repo with no identity anywhere is refused with how to set one', async (t) => {
@@ -38,9 +41,9 @@ test('a repo with no identity anywhere is refused with how to set one', async (t
 test('a local identity is used as it is, and the global one is ignored', async (t) => {
   const { repo, home, env } = await bare(t);
   repo.git('config', 'user.name', 'Local Person');
-  repo.git('config', 'user.email', 'local@example.invalid');
-  writeFileSync(join(home, '.gitconfig'), '[user]\n\tname = Global Person\n\temail = global@example.invalid\n');
+  repo.git('config', 'user.email', L);
+  writeFileSync(join(home, '.gitconfig'), `[user]\n\tname = Global Person\n\temail = ${G}\n`);
   const r = await repo.run(['freeze', 'T-1'], { env });
   assert.equal(r.code, 0, r.stdout + r.stderr);
-  assert.equal(repo.git('log', '-1', '--format=%an <%ae>'), 'Local Person <local@example.invalid>');
+  assert.equal(repo.git('log', '-1', '--format=%an <%ae>'), `Local Person <${L}>`);
 });

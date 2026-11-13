@@ -40,10 +40,10 @@ async function redRepo(t, { agent = [process.execPath, FAKE_AGENT, '--output-for
 }
 
 function agentEnv(repo, extra = {}) {
-  return { FAKE_AGENT_LOG: join(repo.dir, '.git', 'fake-agent.log'), FAKE_AGENT_PROVEN: PROVEN, ...extra };
+  return { FAKE_AGENT_LOG: join(repo.aux, 'fake-agent.log'), FAKE_AGENT_PROVEN: PROVEN, ...extra };
 }
 function agentCalls(repo) {
-  const log = join(repo.dir, '.git', 'fake-agent.log');
+  const log = join(repo.aux, 'fake-agent.log');
   return existsSync(log) ? readFileSync(log, 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l)) : [];
 }
 const lines = (r) => (r.stdout + '\n' + r.stderr).split('\n');
@@ -461,6 +461,7 @@ test('kane identity: the whole package directory of the resolved program is hash
   writeFileSync(join(pkg, 'package.json'), '{"name":"kane"}');
   writeFileSync(join(pkg, 'lib', 'main.js'), '// main');
   writeFileSync(join(pkg, 'lib', 'other.js'), '// other');
+  chmodSync(join(pkg, 'lib', 'main.js'), 0o755);
   symlinkSync(join(pkg, 'lib', 'main.js'), join(base, 'bin', 'kane-cli'));
   const kane = { command: ['kane-cli'], fake: false };
   const env = { PATH: join(base, 'bin') };

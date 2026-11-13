@@ -81,10 +81,15 @@ export async function makeRepo(t, { timeoutS = 60, maxAttempts = 4 } = {}) {
   writeFileSync(join(shim, 'kane-cli'), '#!/bin/sh\necho "the real kane-cli was called in a test" >&2\ntouch "$0.called"\nexit 99\n');
   chmodSync(join(shim, 'kane-cli'), 0o755);
 
-  const log = join(dir, '.git', 'fake-kane.log');
-  const counter = join(dir, '.git', 'fake-kane.count');
+  // The harness's own logs live beside the repo, not in .git, which proven loop hashes whole.
+  const aux = `${dir}-aux`;
+  mkdirSync(aux, { recursive: true });
+  t.after(() => rmSync(aux, { recursive: true, force: true }));
+  const log = join(aux, 'fake-kane.log');
+  const counter = join(aux, 'fake-kane.count');
   const repo = {
     dir,
+    aux,
     url: `http://127.0.0.1:${await freePort()}/`,
     log,
     // realKane: true leaves PROVEN_KANE_BIN unset, so Proven would reach for kane-cli (the shim).
