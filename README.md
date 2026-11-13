@@ -4,6 +4,8 @@
 
 # Proven
 
+[![CI](https://github.com/vijaygopalbalasa/proven/actions/workflows/ci.yml/badge.svg)](https://github.com/vijaygopalbalasa/proven/actions/workflows/ci.yml)
+
 **A ticket closes only when Kane CLI saw its frozen test fail before the change and pass after it.**
 
 Coding agents say "done" before it is true. With Proven, a person freezes a ticket's acceptance test first. Kane must
@@ -13,7 +15,7 @@ handed back to the agent, with no person in between.
 
 ![The Proven board: three tickets, each with Kane's failure before the change and its pass after it](docs/images/board.png)
 
-Demo video (2 min): VIDEO_LINK_TODO
+Demo video: VIDEO_LINK_TODO
 
 **Try it in 30 seconds, with no install and no login:**
 
@@ -23,34 +25,39 @@ cd proven
 npm start          # then open http://127.0.0.1:8090/
 ```
 
-What Kane caught in the recorded run (a demo shop with coupon codes):
-
-- Before any change, Kane failed the frozen test for the right reason: "The cart rejects the required FALL15 coupon, so the order total remains $30.00 instead of $26.25."
-- The agent's fix for that ticket broke an older one. A fresh Kane run failed it, and a second fresh run agreed: "The cart rejects the valid SAVE10 coupon, so the order total remains $30.00 instead of $27.50." The older ticket reopened by itself. (The demo tickets are written so this happens; see "Honest disclosure" below.)
-- The loop handed it back, the agent fixed it, Kane passed it, and `proven verify --replay` ran Kane again at red and at green: CONFIRMED.
-
 Three words used below: **frozen** means the ticket and its test are committed and locked before any work starts. **Red**
 means Kane fails that test on the code as it was. **Green** means Kane passes the same unchanged test after the change.
+
+What Kane caught in the recorded run (a demo shop with coupon codes). The demo tickets are written so this happens (see "Honest disclosure" below):
+
+- Before any change, Kane failed the frozen test for the right reason: "The cart rejects the required FALL15 coupon, so the order total remains $30.00 instead of $26.25."
+- The agent's fix for that ticket broke an older one. A fresh Kane run failed it, and a second fresh run agreed: "The cart rejects the valid SAVE10 coupon, so the order total remains $30.00 instead of $27.50." The older ticket reopened by itself.
+- The loop handed it back, the agent fixed it, Kane passed it, and `proven verify --replay` ran Kane again at red and at green: CONFIRMED.
 
 ## For judges
 
 1. **See it (30 seconds).** `npm start` shows the board over the receipts committed here. Each card's receipt is re-checked
    with git when the board loads. Needs Node.js 22 or newer. No install, no login.
-2. **Run the tests.** `npm test` runs 154 tests, every command end to end, on a fake Kane (no login). It takes about 75 s.
+2. **Run the tests.** `npm test` runs 154 tests, every command end to end, on a fake Kane (no login). It takes about 1 to 3 minutes.
 3. **Verify a receipt.** `node bin/proven.js verify receipts/T-1.json` checks it with git alone, no network. With a Kane
    login, add `--replay` and Kane runs the frozen test again with the app at red (must fail) and at green (must pass).
    Replay serves the app on port 8091, so nothing else may listen there.
-4. **Run the whole loop yourself.** Start from the branch `try-it` (its code is at `7291370`; later commits there change
-   only docs), where T-3 is written but not frozen:
+4. **See Kane fail a test yourself (about 30 credits, about 1 minute).** This needs Kane CLI and `kane-cli login`, and
+   nothing else. From the branch `try-it` (its code is at `7291370`; later commits there change only docs), where T-3 is
+   written but not frozen:
    ```
    git checkout try-it
    node bin/proven.js freeze T-3      # a person freezes the ticket's test
    node bin/proven.js red T-3         # Kane must fail it on the shop as it is
+   ```
+   You should see Kane pass step 1 and fail step 2, with its own words for why. Port 8091 must be free.
+5. **Run the whole loop yourself.** Continue on the same branch after step 4:
+   ```
    node bin/proven.js loop            # the agent, Kane and the recheck, in one command
    node bin/proven.js verify receipts/T-1.json --replay
    ```
-   Measured costs: `red` about 30 Kane credits and about 1 minute. `loop` about 170 credits and about 11 minutes. Each
-   `verify --replay` about 25 to 50 credits and about 2.5 minutes. The whole of this step with the final replay: about
+   Measured costs: `red` (step 4) about 30 Kane credits and about 1 minute. `loop` about 170 credits and about 11 minutes. Each
+   `verify --replay` about 25 to 50 credits and about 2.5 minutes. Steps 4 and 5 together with the final replay: about
    225 to 280 credits and about 15 minutes. Nothing else may listen on port 8091: Proven serves the app there while Kane
    runs.
 
@@ -61,9 +68,9 @@ means Kane fails that test on the code as it was. **Green** means Kane passes th
      may ask you to trust it.
    - Node.js 22 or newer (we tested on 24), and git with `user.name` and `user.email` set.
    - We tested on macOS only.
-5. **Fallback without credits.** The receipts and state of the recorded run are committed here. `verify` works offline,
+6. **Fallback without credits.** The receipts and state of the recorded run are committed here. `verify` works offline,
    and [docs/recorded-run.md](docs/recorded-run.md) has the real terminal output of the run, line by line.
-6. **Dates.** The first commit is `68295c6`, at 2026-11-13 02:20 IST (Nov 12 20:50 UTC). The history is as written.
+7. **Dates.** The first commit is `68295c6`, at 2026-11-13 02:20 IST (Nov 12 20:50 UTC). The history is as written.
 
 ### Honest disclosure
 
@@ -146,8 +153,8 @@ passed it, and `proven verify` printed CONFIRMED. What that run shows:
 ```
 npm link                                    # once, from this repository: the agent calls plain `proven`
 cd your-repo                                # a git repository with a static app in a folder, for example site/
-echo '{ "app": "site" }' > .proven/config.json
-proven init                                 # then commit what it wrote
+mkdir -p .proven && echo '{ "app": "site" }' > .proven/config.json
+proven init                                 # then: git add -A && git commit -m "Add Proven"
 proven new T-1 "Your feature" --url http://localhost:8095/ --landmark "text on the page"
 # fill in tickets/T-1.md: plain steps, each criterion ending in a Verify line
 proven freeze T-1 && proven red T-1         # Kane must fail it on your app as it is
