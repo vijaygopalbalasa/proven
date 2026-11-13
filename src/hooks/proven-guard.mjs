@@ -349,7 +349,7 @@ const FORMAT = [/^--format=.*$/, /^--pretty=.*$/];
 const GIT_FLAGS = {
   log: { plain: ['--oneline', '--stat', '--name-only', '--name-status', '-p', '--graph', '--decorate', '--all'], valued: ['-n'], attached: [/^-n\d+$/, ...FORMAT], numeric: true },
   show: { plain: ['--stat', '--name-only', '--name-status', '-p'], attached: FORMAT },
-  diff: { plain: ['--stat', '--name-only', '--name-status', '--cached', '--staged', '--no-color'], valued: ['-U'], attached: [/^-U\d+$/] },
+  diff: { plain: ['--stat', '--name-only', '--name-status', '--cached', '--staged', '--no-color'], attached: [/^-U\d+$/] },
   status: { plain: ['-s', '--short', '--porcelain', '-b'] },
   'rev-parse': { plain: ['--short', '--abbrev-ref', '--show-toplevel'] },
   'ls-files': {},
@@ -369,6 +369,9 @@ function flagProblem(label, spec, args) {
     if (!w.startsWith('-') || w === '-') continue;
     if (spec.plain?.includes(w)) continue;
     if (spec.valued?.includes(w)) {
+      // The value is the next word. It may not look like a flag, or a flag could hide behind a flag that takes a value.
+      const value = args[i + 1];
+      if (value === undefined || (value.startsWith('-') && !/^-\d+$/.test(value))) return fail();
       i++;
       continue;
     }
@@ -393,6 +396,7 @@ function segmentProblem(words) {
     if (!GIT_READ.has(sub)) return 'only read-only git subcommands are allowed (log, show, diff, status, rev-parse, ls-files, blame, grep, cat-file, branch --list)';
     const rest = args.slice(1);
     if (sub === 'branch' && rest.some((w) => w !== '--list')) return 'git branch is allowed only with no arguments or --list';
+    if (rest.some((w) => w === '--output' || w.startsWith('--output='))) return 'git may not write its output to a file';
     return flagProblem(`git ${sub}`, GIT_FLAGS[sub], rest);
   }
   if (!READ_ONLY.has(name)) return `${name} is not a read-only program on the list`;
@@ -433,6 +437,17 @@ export function allowVerdict(command) {
   return null;
 }
 
+// The reason a path is not allowed for an edit tool, or null: it must name a file inside the project (symlinks resolved
+// where the file or its parent exists). An edit outside, such as ~/.gitconfig, could make an allowed git command run code.
+function outsideProject(path, { projectDir, cwd }) {
+  if (typeof path !== 'string' || !path.trim()) return 'has no file path';
+  const root = realish(resolve(projectDir));
+  const target = realish(resolve(cwd || projectDir, path.trim()));
+  const rel = relative(root, target);
+  if (rel.startsWith('..') || isAbsolute(rel)) return 'is outside the project';
+  return null;
+}
+
 // The reason to block a tool call, or null to let it through.
 export function decide(input, { projectDir }) {
   if (!input || typeof input !== 'object') return null;
@@ -441,6 +456,8 @@ export function decide(input, { projectDir }) {
   const where = { projectDir, cwd: typeof input.cwd === 'string' ? input.cwd : projectDir };
   if (tool === 'Write' || tool === 'Edit' || tool === 'MultiEdit' || tool === 'NotebookEdit') {
     const path = args.file_path ?? args.notebook_path;
+    const outside = outsideProject(path, where);
+    if (outside) return `Proven: ${path || 'this edit'} ${outside}, and the agent edits only files inside the project, the app folder with its edit tools. ${DONE_HINT}`;
     const area = protectedArea(path, where);
     if (area) return `Proven: ${path} is under ${area}/, which the agent does not change. ${WHY[area]} ${DONE_HINT}`;
     return null;

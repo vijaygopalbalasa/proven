@@ -12,6 +12,8 @@
 
 ## What it blocks
 
+- Edit tools may write only inside the project. A path outside it, or one that reaches outside through a symlink, is
+  denied (an edit to `~/.gitconfig` could make an allowed git command run code).
 - Writes by Write, Edit, MultiEdit and NotebookEdit to `tickets/` (where Kane also keeps its recordings), `receipts/`,
   `.proven/`, `.claude/`, `.git/`, and Proven's own files: `bin/`, `src/`, `package.json`, `node_modules/`, `test/`,
   `docs/`, `.gitignore` and `README.md`. The agent's only writable area is the app folder.
@@ -23,6 +25,7 @@
   - a read-only git subcommand: `log`, `show`, `diff`, `status`, `rev-parse`, `ls-files`, `blame`, `grep`, `cat-file`,
     `branch --list`.
 - Each listed program accepts only an explicit list of safe flags. Any other flag, or an abbreviation of one, is blocked.
+  A flag that takes a value must be followed by a word that is not itself a flag, and git never takes `--output`.
 - An unquoted word may hold only letters, digits and `_ . / : = , @ % + -`. Single quotes are literal. Double quotes
   may not hold `$` or a backtick. Only `2>&1`, `2>/dev/null` and `>/dev/null` are allowed as redirections.
 - Everything else is blocked: command substitution, `cd`, variable assignments, `npm`, `node` (other than the done

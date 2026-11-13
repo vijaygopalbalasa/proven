@@ -190,10 +190,11 @@ test('the hook blocks writes to tickets, receipts, .proven and .claude, and a pe
 
   // Bash is an allowlist now (see guard-allowlist.test.js): the agent reads, edits the app with its edit tools and
   // runs proven done, so commands that write, run other programs or recheck are no longer in this list.
+  // A file outside the project is denied now (see guard-allowlist.test.js): an edit to ~/.gitconfig could make an allowed
+  // git command run code.
   const allowed = [
     ['Write', { file_path: join(dir, 'demo', 'app', 'cart.js'), content: 'fixed' }],
     ['Edit', { file_path: join(dir, 'CLAUDE.md'), old_string: 'a', new_string: 'b' }],
-    ['Write', { file_path: join(tmpdir(), 'proven-elsewhere.txt'), content: 'x' }],
     ['Read', { file_path: join(dir, 'tickets', 'T-1_test.md') }],
     ['Bash', { command: 'node bin/proven.js done T-1', timeout: 600000 }],
     ['Bash', { command: 'cat tickets/T-1.md .proven/state/T-1.json' }],
