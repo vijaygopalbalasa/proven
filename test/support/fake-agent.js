@@ -6,7 +6,7 @@
 // FAKE_AGENT_MODE: "work" (default) edits and runs done until it is green, told to stop or out of tries;
 // "quit" exits at once with FAKE_AGENT_EXIT (default 3) without running done.
 import { spawnSync } from 'node:child_process';
-import { appendFileSync, readFileSync, writeFileSync } from 'node:fs';
+import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 
 const argv = process.argv.slice(2);
 const prompt = argv.at(-1) ?? '';
@@ -56,6 +56,7 @@ if (mode === 'alternates') writeFileSync('.git/objects/info/alternates', process
 if (mode === 'attributes') appendFileSync('.git/info/attributes', '*.zzz text\n');
 if (mode === 'gitattributes') writeFileSync('.gitattributes', '*.zzz text\n');
 if (mode === 'kane-swap') appendFileSync(process.env.FAKE_AGENT_KANE_FILE, '\n# the agent changed this\n');
+if (mode === 'node-modules') { mkdirSync('node_modules/x', { recursive: true }); writeFileSync('node_modules/x/index.js', '// ignored by git, outside the app'); }
 if (mode === 'ignored-file') writeFileSync('src/.DS_Store', 'ignored by .gitignore, but it is in src');
 if (mode === 'git-config') appendFileSync('.git/config', '[alias]\n\tx = !true\n');
 if (mode === 'git-exclude') appendFileSync('.git/info/exclude', 'src/\n');
@@ -85,7 +86,7 @@ if (mode === 'other-ticket') {
 
 const tries = Number(process.env.FAKE_AGENT_TRIES ?? 6);
 for (let n = 1; n <= tries; n++) {
-  const file = 'demo/app/styles.css';
+  const file = `${process.env.FAKE_AGENT_APP ?? 'demo/app'}/styles.css`;
   writeFileSync(file, readFileSync(file, 'utf8') + `/* ${id} fake agent edit ${process.hrtime.bigint()} */\n`);
   emit([{ type: 'tool_use', name: 'Edit', input: { file_path: file, old_string: 'a', new_string: SECRET_BODY } }]);
   const command = `node bin/proven.js done ${id}`;
