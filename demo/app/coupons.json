@@ -1,5 +1,6 @@
 {
   "codes": [
-    { "code": "FALL15", "percent_off": 15 }
+    { "code": "FALL15", "percent_off": 15 },
+    { "code": "SAVE10", "percent_off": 10 }
   ]
 }
