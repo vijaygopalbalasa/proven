@@ -25,16 +25,19 @@ What Kane caught in the recorded run (a demo shop with coupon codes):
 - The agent's fix for that ticket broke an older one. A fresh Kane run failed it, and a second fresh run agreed: "The cart rejects the valid SAVE10 coupon, so the order total remains $30.00 instead of $27.50." The older ticket reopened by itself. (The demo tickets are written so this happens; see "Honest disclosure" below.)
 - The loop handed it back, the agent fixed it, Kane passed it, and `proven verify --replay` ran Kane again at red and at green: CONFIRMED.
 
+Three words used below: **frozen** means the ticket and its test are committed and locked before any work starts. **Red**
+means Kane fails that test on the code as it was. **Green** means Kane passes the same unchanged test after the change.
+
 ## For judges
 
 1. **See it (30 seconds).** `npm start` shows the board over the receipts committed here. Each card's receipt is re-checked
    with git when the board loads. Needs Node.js 22 or newer. No install, no login.
-2. **Run the tests.** `npm test` runs 154 tests, every command end to end, on a fake Kane (no login).
+2. **Run the tests.** `npm test` runs 154 tests, every command end to end, on a fake Kane (no login). It takes about 75 s.
 3. **Verify a receipt.** `node bin/proven.js verify receipts/T-1.json` checks it with git alone, no network. With a Kane
    login, add `--replay` and Kane runs the frozen test again with the app at red (must fail) and at green (must pass).
-4. **Run the whole loop yourself.** You need Kane CLI and `kane-cli login`, Google Chrome, Claude Code (`claude`), about
-   200 Kane credits and about 11 minutes. Start from the branch `try-it` (at `7291370`), where T-3 is written but not
-   frozen:
+   Replay serves the app on port 8091, so nothing else may listen there.
+4. **Run the whole loop yourself.** Start from the branch `try-it` (its code is at `7291370`; later commits there change
+   only docs), where T-3 is written but not frozen:
    ```
    git checkout try-it
    node bin/proven.js freeze T-3      # a person freezes the ticket's test
@@ -42,7 +45,18 @@ What Kane caught in the recorded run (a demo shop with coupon codes):
    node bin/proven.js loop            # the agent, Kane and the recheck, in one command
    node bin/proven.js verify receipts/T-1.json --replay
    ```
-   Nothing else may listen on port 8091: Proven serves the app there while Kane runs.
+   Measured costs: `red` about 30 Kane credits and about 1 minute. `loop` about 170 credits and about 11 minutes. Each
+   `verify --replay` about 25 to 50 credits and about 2.5 minutes. The whole of this step with the final replay: about
+   225 to 280 credits and about 15 minutes. Nothing else may listen on port 8091: Proven serves the app there while Kane
+   runs.
+
+   What you need, stated plainly:
+   - Kane CLI with `kane-cli login`, and network access to Kane's cloud and to Anthropic.
+   - Google Chrome.
+   - Claude Code (`claude`), which runs headless (`claude -p`) on your own account and quota. Its first run in a folder
+     may ask you to trust it.
+   - Node.js 22 or newer (we tested on 24), and git with `user.name` and `user.email` set.
+   - We tested on macOS only.
 5. **Fallback without credits.** The receipts and state of the recorded run are committed here. `verify` works offline,
    and [docs/recorded-run.md](docs/recorded-run.md) has the real terminal output of the run, line by line.
 6. **Dates.** The first commit is `68295c6`, at 2026-11-13 02:20 IST (Nov 12 20:50 UTC). The history is as written.
@@ -53,7 +67,11 @@ T-3 was written on purpose so that its plain reading (take the coupon codes from
 8.1 in [docs/requirements.md](docs/requirements.md)). The agent took that reading on its own in all three live runs that day: two rehearsals in throwaway copies (their logs
 are not in this repo) and the filmed run recorded here. The recheck reopened T-1 each time: rehearsal 1 at `a51f39f` and
 rehearsal 2 at `ed46d29` (both commits are from those throwaway copies), the filmed run at `fb9d347`. Each reopen was a fresh run that failed, then a second fresh run
-that failed again. So the reopen is real, but it is not a surprise: the demo is built to show it.
+that failed again. A fourth run, from a fresh clone of `try-it` following only this README, also reopened T-1 (that run
+is not in this repo's history). So the reopen is real, but it is not a surprise: the demo is built to show it.
+
+In our runs the agent never tried to edit a test, so the guard never had to block anything live.
+[docs/guard.md](docs/guard.md) shows it blocking when called the way Claude Code calls it.
 
 ## The recorded run
 

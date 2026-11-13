@@ -39,3 +39,30 @@ and says the agent may only read files, edit the app with its edit tools, and ru
 Defence in depth, not a sandbox. An agent with a shell outside the hook can still get around it. That is why a ticket is
 shown as done only for a receipt that verifies, why `proven loop` checks git and file hashes after every session (see
 [loop.md](loop.md)), and why `verify --replay` stays the strongest check.
+
+## Seen blocking
+
+In our live runs the agent never tried to change a test, so nothing was blocked live. This is the guard called the way
+Claude Code calls a PreToolUse hook: the tool call as JSON on stdin, `<project>` standing for the repository folder.
+Exit code 2 blocks the call and shows the reason to the agent; exit code 0 lets it through.
+
+```
+Edit  <project>/tickets/T-3_test.md
+  Proven: <project>/tickets/T-3_test.md is under tickets/, which the agent does not change. Tickets, their frozen tests
+  and locks are a person's. Fix the app, not the test. When you believe a ticket is done, run proven done T-N and wait for Kane.
+  exit code: 2
+
+Bash  node bin/proven.js red T-3
+  Proven: proven red is a person's step, not the agent's. Work on the app. When you believe a ticket is done, run proven
+  done T-N and wait for Kane.
+  exit code: 2
+
+Bash  echo loosened > tickets/T-3_test.md
+  Proven: this command writes to tickets/T-3_test.md, under tickets/, which the agent does not change. Tickets, their
+  frozen tests and locks are a person's. Fix the app, not the test. When you believe a ticket is done, run proven done T-N
+  and wait for Kane.
+  exit code: 2
+
+Bash  cat tickets/T-3.md                       exit code: 0   (reading is allowed)
+Edit  <project>/demo/app/cart.js               exit code: 0   (the app is the agent's to edit)
+```
