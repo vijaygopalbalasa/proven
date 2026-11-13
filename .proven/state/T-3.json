@@ -1,7 +1,7 @@
 {
   "ticket": "T-3",
   "frozen_commit": "c4d986966219f5927c9527356a2f183740f9b2a8",
-  "status": "red",
+  "status": "done",
   "attempts": 0,
   "red": {
     "commit": "452057bf8ad60fc7ecbd7470696c8b814b0f6cdb",
@@ -16,5 +16,15 @@
     "kane_cli": "0.10.4",
     "app_tree": "4e62914487bfb59c1c5f2b7fcbe31f512aa7bde8",
     "at": "2026-11-13T00:44:59.651Z"
-  }
+  },
+  "green": {
+    "commit": "25ddbee7574019f261ab0ff3b2104831203ffb6a",
+    "app_tree": "becd5838efc115f70e240e7029f64d8ead1524f3",
+    "steps_passed": 2,
+    "evidence_sha256": "c5dcb84f574302ee2388fd34ac821aefcfae9f18a322895fb9d309f416199350",
+    "kane": "kane-cli",
+    "kane_cli": "0.10.4",
+    "at": "2026-11-13T00:46:25.440Z"
+  },
+  "receipt": "receipts/T-3.json"
 }
