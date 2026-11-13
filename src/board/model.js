@@ -45,9 +45,9 @@ function runningFor(root, id) {
   let text = 'Kane is running';
   if (label === 'red') text = 'Kane is running red';
   else if (attempt) text = `Kane is checking attempt ${attempt[1]}`;
-  else if (label === 'recheck-replay') text = 'Kane is replaying it for proven recheck';
+  else if (label === 'recheck-replay') text = 'Kane is running it again, fresh, for proven recheck';
   else if (label === 'recheck-confirm') text = 'Kane is confirming with a fresh run';
-  else if (label.startsWith('replay-')) text = `Kane is replaying the ${label.slice(7)} side for proven verify`;
+  else if (label.startsWith('replay-')) text = `Kane is running it at the ${label.slice(7)} commit for proven verify --replay`;
   return { label, text, since: a.started_at ?? null };
 }
 
