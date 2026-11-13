@@ -43,6 +43,15 @@ if (mode === 'rewrite-restore') {
   writeFileSync(file, changed);
   process.on('exit', () => writeFileSync(file, original));
 }
+if (mode === 'replace-ref') {
+  const [a, b] = [sh('git', ['rev-parse', 'HEAD']).stdout.trim(), sh('git', ['rev-parse', 'HEAD~1']).stdout.trim()];
+  sh('git', ['update-ref', `refs/replace/${a}`, b]);
+}
+if (mode === 'grafts') writeFileSync('.git/info/grafts', '\n');
+if (mode === 'alternates') writeFileSync('.git/objects/info/alternates', process.cwd() + '/.git/objects\n');
+if (mode === 'attributes') appendFileSync('.git/info/attributes', '*.zzz text\n');
+if (mode === 'gitattributes') writeFileSync('.gitattributes', '*.zzz text\n');
+if (mode === 'kane-swap') appendFileSync(process.env.FAKE_AGENT_KANE_FILE, '\n# the agent changed this\n');
 if (mode === 'ignored-file') writeFileSync('src/.DS_Store', 'ignored by .gitignore, but it is in src');
 if (mode === 'git-config') appendFileSync('.git/config', '[alias]\n\tx = !true\n');
 if (mode === 'git-exclude') appendFileSync('.git/info/exclude', 'src/\n');

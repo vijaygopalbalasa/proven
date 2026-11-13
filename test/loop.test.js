@@ -5,7 +5,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { decide, personStep } from '../src/hooks/proven-guard.mjs';
 import { cpSync } from 'node:fs';
-import { couponTicket, makeRepo, PROVEN, ROOT } from './support/helpers.js';
+import { chmodSync } from 'node:fs';
+import { FAKE_KANE, couponTicket, makeRepo, PROVEN, ROOT } from './support/helpers.js';
 import { findCommittedLeaks } from './support/scan.js';
 
 const FAKE_AGENT = join(ROOT, 'test', 'support', 'fake-agent.js');
@@ -381,4 +382,55 @@ test('guard: .git is protected, so the agent cannot change config, hooks or refs
   assert.equal(call('Bash', { command: 'git log --oneline' }), null);
   assert.equal(call('Bash', { command: 'git status' }), null);
   assert.equal(call('Write', { file_path: join(dir, '.gitignore-not-really', 'x'), content: 'x' }), null);
+});
+
+for (const [mode, what, re] of [
+  ['replace-ref', 'a refs/replace ref', /refs\/replace\//],
+  ['grafts', '.git/info/grafts', /\.git\/info\/grafts/],
+  ['alternates', '.git/objects/info/alternates', /\.git\/objects\/info\/alternates/],
+  ['attributes', '.git/info/attributes', /\.git\/info\/attributes/],
+  ['gitattributes', 'a .gitattributes file', /\.gitattributes/],
+]) {
+  test(`loop: ${what} created during the session is tampering`, async (t) => {
+    const repo = await redRepo(t);
+    const r = await repo.run(['loop', '--agent-config'], { scenario: ['green', 'green'], env: agentEnv(repo, { FAKE_AGENT_MODE: mode }) });
+    assert.equal(r.code, 1, r.stdout + r.stderr);
+    const text = r.stdout + '\n' + r.stderr;
+    assert.match(text, /^Proven's own files changed during the agent's session: .*\. Nothing from this session is trusted\.$/m);
+    assert.match(text, re);
+    assert.doesNotMatch(text, /is done|Rechecking|Loop finished/);
+  });
+}
+
+test('git: every git command Proven makes ignores replace objects and system and global config', async (t) => {
+  const { git, gitEnv } = await import('../src/git.js');
+  const env = gitEnv({});
+  assert.equal(env.GIT_NO_REPLACE_OBJECTS, '1');
+  assert.equal(env.GIT_CONFIG_NOSYSTEM, '1');
+  assert.equal(env.GIT_CONFIG_GLOBAL, '/dev/null');
+  const repo = await makeRepo(t);
+  const original = repo.head();
+  repo.write('demo/app/other.txt', 'x');
+  repo.git('add', '-A');
+  repo.git('commit', '-q', '-m', 'A different commit');
+  repo.git('update-ref', `refs/replace/${original}`, repo.head());
+  assert.equal(repo.git('log', '-1', '--format=%s', original), 'A different commit', 'plain git is fooled by the replace ref');
+  assert.equal(git(repo.dir, ['log', '-1', '--format=%s', original]).trim(), 'Start the shop', 'Proven is not');
+});
+
+test('loop: a Kane program that changed since the loop started is not run again', async (t) => {
+  const wrapper = join(mkdtempSync(join(tmpdir(), 'proven-kane-')), 'kane-wrapper');
+  t.after(() => rmSync(join(wrapper, '..'), { recursive: true, force: true }));
+  writeFileSync(wrapper, `#!/bin/sh\nexec "${process.execPath}" "${FAKE_KANE}" "$@"\n`);
+  chmodSync(wrapper, 0o755);
+  const repo = await redRepo(t);
+  const env = (extra) => agentEnv(repo, { PROVEN_KANE_BIN: wrapper, FAKE_AGENT_KANE_FILE: wrapper, ...extra });
+  const r = await repo.run(['loop', '--agent-config'], { scenario: ['green', 'green'], env: env({ FAKE_AGENT_MODE: 'kane-swap' }) });
+  assert.equal(r.code, 2, r.stdout + r.stderr);
+  assert.match(r.stdout + r.stderr, /^did not run: the Kane program .*kane-wrapper changed since the loop started\. Nothing was rechecked\.$/m);
+  assert.doesNotMatch(r.stdout + r.stderr, /is done|Loop finished/);
+  // unchanged, the same wrapper is fine
+  const repo2 = await redRepo(t);
+  const ok = await repo2.run(['loop', '--agent-config'], { scenario: ['green', 'green'], env: { ...agentEnv(repo2), PROVEN_KANE_BIN: wrapper, FAKE_AGENT_KANE_FILE: wrapper } });
+  assert.equal(ok.code, 0, ok.stdout + ok.stderr);
 });
