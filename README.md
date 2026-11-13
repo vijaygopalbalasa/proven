@@ -2,6 +2,17 @@
 
 A ticket closes only when Kane CLI saw its frozen test fail before the change and pass after it.
 
+## What happened in this repo
+
+On Nov 13 (06:13 to 06:28 IST), starting from `14e9664`, one `proven loop` ran against live Kane CLI and Claude Code.
+
+- `proven freeze T-3`: ticket and test in `c4d9869`, lock in `452057b`. `proven red T-3` at `452057b`. Kane: "The cart rejects the required FALL15 coupon, so the order total remains $30.00 instead of $26.25."
+- `proven loop` (one command, exit 0, 10 min 42 s): the agent fixed T-3 on its first attempt (green `25ddbee`, receipt `fb9d347`).
+- The loop's recheck ran T-1 fresh twice and both runs failed, so T-1 reopened at `fb9d347` (state commit `e5e609b`). Kane: "The cart rejects the valid SAVE10 coupon, so the order total remains $30.00 instead of $27.50." T-3's change had broken T-1.
+- The loop handed T-1 back. The agent said: "The SAVE10 code is missing from coupons.json. With a $25.00 subtotal, 10% off ($2.50) plus $5.00 shipping gives the expected $27.50." It edited `demo/app/coupons.json` and ran done (green `8d0207e`, receipt `d3b9389`, which links the earlier receipt). The final recheck: all three tickets still pass.
+- `proven verify receipts/T-1.json --replay`: CONFIRMED, 11 git checks. Kane failed step 2 at red `fb9d347` and passed at green `8d0207e`.
+- The whole take used about 207 Kane credits.
+
 ## The idea: red, then green
 
 AI coding agents say a ticket is done before it is. A passing test proves little if it might have passed anyway. So
@@ -25,8 +36,10 @@ Run `npm link` once to call Proven as `proven`. The commands below use `node bin
 
 ## The loop, with exact commands
 
-The demo shop is in `demo/app/`. Tickets T-1 and T-2 are already closed with real Kane receipts. T-3 is written and
-waiting: marketing put a new code in `demo/app/coupons.json`, and the cart ignores that file.
+The demo shop is in `demo/app/`. Tickets T-1, T-2 and T-3 are closed with real Kane receipts, and T-3 is closed in
+this branch's history (see "What happened in this repo"). To run the loop yourself, start from the branch `try-it`
+(at `14e9664`, before that run), where T-3 is written but not frozen: marketing put a new code in
+`demo/app/coupons.json`, and the cart ignores that file. Run `git checkout try-it`, then the same commands:
 
 ```
 node bin/proven.js board                  # second terminal: the board at http://127.0.0.1:8090/, live
@@ -38,7 +51,7 @@ claude -p --model claude-sonnet-5-5 --permission-mode acceptEdits \
   --allowedTools "Bash(node bin/proven.js done *)" \
   "Ticket T-3 is red. Read tickets/T-3.md and make it true in demo/app. When you believe it is done, run node bin/proven.js done T-3 and follow what it prints."
 
-node bin/proven.js recheck                # runs every done ticket's test again; T-3's change broke T-1, so T-1 reopens
+node bin/proven.js recheck                # runs every done ticket's test again; in the real run T-3's change broke T-1 (e5e609b), so T-1 reopened
 claude -p --model claude-sonnet-5-5 --permission-mode acceptEdits \
   --allowedTools "Bash(node bin/proven.js done *)" \
   "proven recheck reopened T-1. Read tickets/T-1.md and .proven/state/T-1.json for what Kane saw, fix demo/app, then run node bin/proven.js done T-1 and follow what it prints."
@@ -59,8 +72,9 @@ ticket is done, it runs `proven recheck`, hands any ticket that reopens back to 
 ends with a recheck whose result it prints.
 
 While it runs it prints, naming the ticket on every line, each attempt as `proven done` records it (attempt number,
-Kane's verdict, the failing step and Kane's one-liner), and one short line per agent tool call (the tool and the file
-or command, about 100 characters at most, never file contents or tool results).
+Kane's verdict, the failing step and Kane's one-liner), one short line per agent tool call (the tool and the file or
+command, with paths shown relative to the repository, about 100 characters at most), and the agent's own words as
+"agent says" lines (shortened). It never prints file contents or tool results.
 
 The agent command is in `.proven/agent.json`, an optional file. Because a cloned repository could ship its own, `proven
 loop` prints the command and refuses (exit 2) unless you pass `--agent-config`, each time. It also always refuses a
@@ -216,10 +230,11 @@ pinned when a ticket is frozen.
 - Kane's recording folder (`tickets/output-T-N/`) stays local, because it carries Kane account and session ids, and
   it is never used for a verdict. So every run authors every step: a minute or two and about 10 to 30 credits each.
 - `recheck` and `verify --replay` run Kane, so they need Kane CLI, Chrome, a login and credits. `recheck` makes one
-  run per done ticket and a second one to confirm a failure; `--replay` makes two. So far they have run only against
-  the test fake, not against live Kane.
-- `--author` comes from Kane CLI 0.10.4's own help ("re-author every step"); it has not run live yet. If Kane ever
-  rejected it, every run would say "did not run", so nothing could pass by mistake.
+  run per done ticket and a second one to confirm a failure; `--replay` makes two. Both ran live on Nov 13: the
+  loop's recheck ran T-1 fresh twice and reopened it, and `verify --replay` confirmed T-1's receipt (see "What
+  happened in this repo"). The test suite still uses the fake Kane.
+- `--author` comes from Kane CLI 0.10.4's own help ("re-author every step"); it ran live on Nov 13 (every recheck run used it) and Kane
+  accepted it. If Kane ever rejected it, every run would say "did not run", so nothing could pass by mistake.
 - A file in Kane's output folder that someone else changes while Kane runs cannot be told apart by its time. Against
   that, Proven relies on `--author` and on Kane's own summary showing no replayed step.
 - `recheck` judges the app as committed and refuses while the app folder has uncommitted changes.
@@ -244,3 +259,5 @@ Measured with Kane CLI 0.10.4 before and during the build:
 - The live gate: T-1 and T-2 went red ("The test expected SAVE10 to reduce the total, but the store rejected that code
   and kept the total at $30.00."), a headless Claude Code agent fixed each through `proven done` on its first attempt,
   and `proven verify` printed CONFIRMED for both receipts.
+- The live take of Nov 13 (one `proven loop`, then `verify --replay` on T-1): about 207 Kane credits in all, 10 min 42 s
+  for the loop itself.
