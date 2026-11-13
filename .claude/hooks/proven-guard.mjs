@@ -242,10 +242,10 @@ function denyVerdict(command, where, depth = 0) {
 // ticket, a program that only reads, or a read-only git subcommand. Everything else is blocked: substitution,
 // redirection to a file, cd, assignments, and every program that is not listed. The denylist above runs first only to
 // give a precise reason; this is what decides. It is defence in depth, not a sandbox.
-const READ_ONLY = new Set(['cat', 'head', 'tail', 'ls', 'wc', 'grep', 'rg', 'find', 'sed', 'awk', 'sort', 'uniq', 'diff', 'jq', 'echo', 'pwd', 'file', 'stat', 'tree']);
+const READ_ONLY = new Set(['cat', 'head', 'tail', 'ls', 'wc', 'grep', 'rg', 'find', 'sed', 'sort', 'uniq', 'diff', 'jq', 'echo', 'pwd', 'file', 'stat', 'tree']);
 const GIT_READ = new Set(['log', 'show', 'diff', 'status', 'rev-parse', 'ls-files', 'blame', 'grep', 'cat-file', 'branch']);
 const ALLOWED_REDIRECTS = new Set(['2>&1', '2>/dev/null', '>/dev/null']);
-const DOLLAR = /[A-Za-z_{(0-9@*#?!$-]/;
+const WORD_CHAR = /[A-Za-z0-9_./:=,@%+-]/;
 const ALLOW_HINT = 'The agent may only read files, edit the app with its edit tools, and run proven done.';
 
 // Splits a command into segments of words, or says why it cannot be read safely.
@@ -277,18 +277,13 @@ function segmentsOf(s) {
     } else if (c === '"') {
       let j = i + 1;
       for (; j < s.length && s[j] !== '"'; j++) {
-        if (s[j] === '\\' && j + 1 < s.length) word += s[++j];
-        else if (s[j] === '`' || (s[j] === '$' && DOLLAR.test(s[j + 1] ?? ''))) return { problem: 'command substitution or expansion' };
+        if (s[j] === '\\' && (s[j + 1] === '"' || s[j + 1] === '\\')) word += s[++j];
+        else if (s[j] === '`' || s[j] === '$') return { problem: 'a $ or backtick inside double quotes' };
         else word += s[j];
       }
       if (j >= s.length) return { problem: 'an unterminated quote' };
       inWord = true;
       i = j;
-    } else if (c === '\\') {
-      if (i + 1 < s.length && s[i + 1] !== '\n') {
-        word += s[++i];
-        inWord = true;
-      } else i++;
     } else if (c === ' ' || c === '\t') endWord();
     else if (c === '\n' || c === ';') endSegment(i);
     else if (c === '|') {
@@ -319,19 +314,71 @@ function segmentsOf(s) {
       const text = `${fd}>${append ? '>' : ''}${target}`;
       if (!ALLOWED_REDIRECTS.has(text)) return { problem: `the redirection ${text}` };
       i = j - 1;
-    } else if (c === '<') return { problem: 'input redirection, a heredoc or process substitution' };
-    else if (c === '(' || c === ')' || c === '`') return { problem: 'a subshell, process or command substitution' };
-    else if (c === '$' && DOLLAR.test(s[i + 1] ?? '')) return { problem: 'command substitution or expansion' };
-    else {
+    } else if (WORD_CHAR.test(c)) {
       word += c;
       inWord = true;
-    }
+    } else return { problem: `the character ${JSON.stringify(c)} outside quotes (an unquoted word may hold only letters, digits and _ . / : = , @ % + -)` };
   }
   endSegment(s.length);
   return { segments };
 }
 
-const shortOpt = (w, letters) => /^-[^-]/.test(w) && [...w.slice(1)].some((x) => letters.includes(x));
+// The flags each read-only program may have, and nothing else: no abbreviations, no prefixes. `plain` take no value,
+// `valued` take the next word, `attached` are patterns for flags with the value in the same word, `letters` are short
+// flags that may be bundled (-la), `numeric` allows -N.
+const FLAGS = {
+  cat: { plain: ['-n'] },
+  head: { valued: ['-n', '-c'], attached: [/^-[nc]\d+$/], numeric: true },
+  tail: { valued: ['-n', '-c'], attached: [/^-[nc]\d+$/], numeric: true },
+  ls: { letters: 'laARh1' },
+  wc: { plain: ['-l', '-w', '-c'], letters: 'lwc' },
+  grep: { plain: ['-n', '-i', '-r', '-R', '-l', '-L', '-c', '-E', '-F', '-w', '-v', '-H', '-h', '--color=never'], valued: ['-A', '-B', '-C', '-e'], attached: [/^-[ABC]\d+$/, /^--include=.+$/, /^--exclude=.+$/], letters: 'nirRlLcEFwvHh' },
+  rg: { plain: ['-n', '-i', '-l', '-c', '-w', '-F', '--no-heading'], valued: ['-g', '-A', '-B', '-C'], attached: [/^-[ABC]\d+$/], letters: 'nilcwF' },
+  find: { plain: ['-print', '-o', '-a'], valued: ['-type', '-name', '-iname', '-path', '-ipath', '-maxdepth', '-mindepth'] },
+  sort: { plain: ['-n', '-r', '-u'], valued: ['-k', '-t'], attached: [/^-k\d+(,\d+)?$/, /^-t.$/], letters: 'nru' },
+  uniq: { plain: ['-c', '-d', '-u'], letters: 'cdu' },
+  diff: { plain: ['-u', '-r', '-q'], letters: 'urq' },
+  jq: { plain: ['-r', '-c', '-S'], letters: 'rcS' },
+  tree: { plain: ['-a', '-d'], valued: ['-L'], attached: [/^-L\d+$/], letters: 'ad' },
+  echo: {},
+  pwd: {},
+  file: {},
+  stat: {},
+};
+const FORMAT = [/^--format=.*$/, /^--pretty=.*$/];
+const GIT_FLAGS = {
+  log: { plain: ['--oneline', '--stat', '--name-only', '--name-status', '-p', '--graph', '--decorate', '--all'], valued: ['-n'], attached: [/^-n\d+$/, ...FORMAT], numeric: true },
+  show: { plain: ['--stat', '--name-only', '--name-status', '-p'], attached: FORMAT },
+  diff: { plain: ['--stat', '--name-only', '--name-status', '--cached', '--staged', '--no-color'], valued: ['-U'], attached: [/^-U\d+$/] },
+  status: { plain: ['-s', '--short', '--porcelain', '-b'] },
+  'rev-parse': { plain: ['--short', '--abbrev-ref', '--show-toplevel'] },
+  'ls-files': {},
+  blame: { valued: ['-L'], attached: [/^-L\d+(,\d+)?$/] },
+  grep: { plain: ['-n', '-i', '-w', '-l'], valued: ['-e'] },
+  'cat-file': { plain: ['-p', '-t'] },
+  branch: { plain: ['--list'] },
+};
+
+// Why a flag is not allowed for this program, or null. A bare `--` ends the flags (git paths follow).
+function flagProblem(label, spec, args) {
+  const listed = [...(spec.plain ?? []), ...(spec.valued ?? []), ...(spec.attached ?? []).map((r) => r.source)];
+  const fail = () => `the guard allows only these flags for ${label}: ${listed.length ? listed.join(' ') : 'none'}`;
+  for (let i = 0; i < args.length; i++) {
+    const w = args[i];
+    if (w === '--' && label.startsWith('git ')) return null;
+    if (!w.startsWith('-') || w === '-') continue;
+    if (spec.plain?.includes(w)) continue;
+    if (spec.valued?.includes(w)) {
+      i++;
+      continue;
+    }
+    if (spec.attached?.some((r) => r.test(w))) continue;
+    if (spec.numeric && /^-\d+$/.test(w)) continue;
+    if (spec.letters && new RegExp(`^-[${spec.letters}]+$`).test(w)) continue;
+    return fail();
+  }
+  return null;
+}
 
 // Why a segment is not allowed, or null.
 function segmentProblem(words) {
@@ -345,16 +392,14 @@ function segmentProblem(words) {
     const sub = args[0];
     if (!GIT_READ.has(sub)) return 'only read-only git subcommands are allowed (log, show, diff, status, rev-parse, ls-files, blame, grep, cat-file, branch --list)';
     const rest = args.slice(1);
-    if (sub === 'branch' && !rest.every((w) => ['--list', '-l', '-a', '-r', '-v', '--all', '--remotes'].includes(w))) return 'git branch is allowed only with no arguments or --list';
-    if (rest.some((w) => w.startsWith('--output') || w === '--ext-diff' || w === '-O' || w.startsWith('-O') || w.startsWith('--open-files-in-pager'))) return 'that git option writes a file or runs a program';
-    return null;
+    if (sub === 'branch' && rest.some((w) => w !== '--list')) return 'git branch is allowed only with no arguments or --list';
+    return flagProblem(`git ${sub}`, GIT_FLAGS[sub], rest);
   }
   if (!READ_ONLY.has(name)) return `${name} is not a read-only program on the list`;
-  if (name === 'find' && args.some((w) => /^-(exec|execdir|ok|okdir|delete|fprint|fprint0|fprintf|fls)$/.test(w))) return 'find may not run programs, delete or write files';
-  if (name === 'sort' && args.some((w) => shortOpt(w, 'oT') || /^--(output|compress-program|temporary-directory)/.test(w))) return 'sort may not write a file or run a program';
-  if (name === 'tree' && args.some((w) => shortOpt(w, 'o') || w.startsWith('--output') || w.startsWith('--fromfile'))) return 'tree may not write a file';
-  if (name === 'file' && args.some((w) => shortOpt(w, 'C'))) return 'file may not write a file';
-  if (name === 'rg' && args.some((w) => w.startsWith('--pre') || w.startsWith('--hostname-bin'))) return 'rg may not run a program';
+  if (name !== 'sed') {
+    const why = flagProblem(name, FLAGS[name], args);
+    if (why) return why;
+  }
   if (name === 'uniq' && args.filter((w) => !w.startsWith('-')).length > 1) return 'uniq with a second file writes it';
   if (name === 'sed') {
     let quiet = false;
@@ -366,23 +411,12 @@ function segmentProblem(words) {
       else if (/^-[nEr]+$/.test(w)) quiet ||= w.includes('n');
       else if (w === '-e') scripts.push(args[++i] ?? '');
       else if (w.startsWith('--expression=')) scripts.push(w.slice(13));
-      else if (w.startsWith('-')) return 'sed is allowed only with -n and print commands';
+      else if (w.startsWith('-')) return 'the guard allows only these flags for sed: -n -e -E -r --quiet --silent, with print-only scripts';
       else files.push(w);
     }
     if (!scripts.length && files.length) scripts.push(files.shift());
     const PRINT = /^(\d+|\$|\/[^/]*\/)?(,(\d+|\$|\/[^/]*\/))?p$/;
     if (!quiet || !scripts.length || !scripts.every((x) => PRINT.test(x.trim()))) return 'sed is allowed only with -n and print commands';
-  }
-  if (name === 'awk') {
-    const rest = [];
-    for (let i = 0; i < args.length; i++) {
-      const w = args[i];
-      if (w === '-F' || w === '-v') i++;
-      else if (/^-[Fv]./.test(w)) continue;
-      else if (w.startsWith('-')) return 'awk is allowed only with -F, -v and a program';
-      else rest.push(w);
-    }
-    if (!rest.length || /[>|@]|\bsystem\b|\bgetline\b|\bprintf?\s*\(.*\)\s*>/.test(rest[0])) return 'awk may not write files, pipe or run programs';
   }
   return null;
 }

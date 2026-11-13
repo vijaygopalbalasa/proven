@@ -94,7 +94,7 @@ function runAgent(ctx, id, cmd, prompt, streamJson) {
   return new Promise((resolve) => {
     let child;
     try {
-      child = spawn(cmd[0], [...cmd.slice(1), prompt], { cwd: root, env: process.env, stdio: ['ignore', 'pipe', 'pipe'], shell: false });
+      child = spawn(cmd[0], [...cmd.slice(1), prompt], { cwd: root, env: { ...process.env, GIT_TEST_DISALLOW_ABBREVIATED_OPTIONS: '1' }, stdio: ['ignore', 'pipe', 'pipe'], shell: false });
     } catch (err) {
       resolve({ notStarted: err });
       return;

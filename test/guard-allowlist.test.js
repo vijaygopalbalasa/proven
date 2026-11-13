@@ -90,7 +90,7 @@ test('allowlist: each read-only program allows only its safe flags, and an unkno
 
 test('allowlist: the lexer is strict, and an unquoted word may hold only letters, digits and _ . / : = , @ % + -', () => {
   const blocked = [
-    'find . -{exec,}', 'ls *', 'ls ?', 'ls [a]', 'cat a#b', 'cat a #c', "echo $'x'", 'echo $"x"', 'grep "$(id)" f', 'grep "a$b" f', 'grep "`id`" f', 'ls ~', 'cat {a,b}', 'cat a\ b', 'echo !x', 'echo a^b', 'cat a<b', 'cat a>b',
+    'find . -{exec,}', 'ls *', 'ls ?', 'ls [a]', 'cat a#b', 'cat a #c', "echo $'x'", 'echo $"x"', 'grep "$(id)" f', 'grep "a$b" f', 'grep "`id`" f', 'ls ~', 'cat {a,b}', 'cat a\\ b', 'echo !x', 'echo a^b', 'cat a<b', 'cat a>b',
     'echo $HOME', "echo '$HOME' $X", 'cat a & cat b', 'echo "a" "b$"', 'cat "a" > out', 'ls ../a;rm -rf x',
   ];
   for (const command of blocked) assert.match(call(command) ?? '', /Proven: /, `should be blocked: ${command}`);
