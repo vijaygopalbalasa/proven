@@ -20,7 +20,7 @@ test('allowlist: the commands the agent really used in the live rehearsal stay a
     'node bin/proven.js done T-1 2>/dev/null',
     "grep -rn 'total$' demo/app",
     'sed -n \'1,5p\' tickets/T-1_test.md',
-    'sed -n -e \'/coupon/p\' demo/app/cart.js',
+    "sed -n '1,20p' demo/app/cart.js", "sed -n '$p' demo/app/cart.js", "sed -n -e '3p' -e '5,7p' demo/app/cart.js", "sed -n '5,$p' demo/app/cart.js",
     'git status',
     'git diff HEAD -- demo/app',
     'git show HEAD --stat',
@@ -134,4 +134,12 @@ test('edit tools may write only inside the project: outside the root is denied, 
   assert.match(edit('Write', { file_path: '' }) ?? '', /Proven: /);
   // protected paths inside the project stay protected
   assert.match(edit('Write', { file_path: join(project, 'tickets', 'T-1.md') }) ?? '', /under tickets\//);
+});
+
+test('allowlist: sed prints line numbers only, never a regex address, a newline, a backslash or a second command', () => {
+  for (const command of [
+    "sed -n '/a/p' f", "sed -n '/coupon/p' f", "sed -n -e '/x/p' f", "sed -n '1,/x/p' f", "sed -n '/x/,5p' f",
+    "sed -n '1p\n1e id' f", "sed -n '1p;1e id' f", "sed -n '1p\\\n1e id' f", "sed -n '1\\p' f", "sed -n '/a\\/p' f", "sed -n '1p' -e '1e id' f",
+    "sed -n 'p' f", "sed -n '1,2' f", "sed -n '1,2P' f", "sed -n '1e id' f", "sed -n '1w x' f", 'sed -n 1p f g;h',
+  ]) assert.match(call(command) ?? '', /Proven: /, command);
 });
