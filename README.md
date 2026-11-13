@@ -140,20 +140,32 @@ Details: [docs/guard.md](docs/guard.md).
 
 ## Use it on your own static app
 
-One real run on someone else's app is in [docs/own-app.md](docs/own-app.md): the vanilla JavaScript TodoMVC example, with
-real Kane and Claude Code. Kane failed a new "Clear completed (2)" test on it, Claude Code made the one-line fix, Kane
-passed it, and `proven verify` printed CONFIRMED. What that run shows:
+Two real runs on someone else's app are in [docs/own-app.md](docs/own-app.md): the vanilla JavaScript TodoMVC example,
+with real Kane and Claude Code. Kane failed a new "Clear completed (2)" test on it, Claude Code made the one-line fix,
+Kane passed it, and `proven verify` printed CONFIRMED. What those runs show:
 
 ```
-npm link                                    # once, from this repository: the agent calls plain `proven`
+npm link                                    # run once, from your clone of Proven (Node 22 or newer): the agent calls plain `proven`
 cd your-repo                                # a git repository with a static app in a folder, for example site/
 mkdir -p .proven && echo '{ "app": "site" }' > .proven/config.json
-proven init                                 # then: git add -A && git commit -m "Add Proven"
+proven init                                 # writes into your repo: the guard hook (.claude/), CLAUDE.md and .gitignore lines
+git add -A && git commit -m "Add Proven"    # commit them before proven new
 proven new T-1 "Your feature" --url http://localhost:8095/ --landmark "text on the page"
-# fill in tickets/T-1.md: plain steps, each criterion ending in a Verify line
+# fill in tickets/T-1.md: plain steps, each criterion ending in a Verify line (example below)
 proven freeze T-1 && proven red T-1         # Kane must fail it on your app as it is
-proven loop                                 # Claude Code fixes it, Kane passes it, a receipt is written
+proven loop                                 # after red, this is what starts the agent: it fixes the app, Kane passes it, a receipt is written
 ```
+
+- `--url`: any free local port works. Proven serves your app folder there while Kane runs, and the page must show the
+  landmark text.
+- The criterion we used on TodoMVC (the whole `tickets/T-1.md` and the commands are in [docs/own-app.md](docs/own-app.md)):
+  ```
+  ### Clear completed shows the count
+  Type Buy milk in the What needs to be done field and press Enter. Do the same for Walk dog and for Pay rent. Click the round checkbox next to Buy milk and the one next to Walk dog.
+  Verify the button at the bottom right of the list reads Clear completed (2).
+  ```
+- "The agent can start" in `proven red`'s output means `proven loop` can now run. Nothing starts the agent until you run it.
+- Times on TodoMVC: `red` about 2.5 minutes (its step 2 alone took 107 s in one run), `proven loop` about 5 minutes.
 
 What works, and what does not:
 
@@ -164,7 +176,8 @@ What works, and what does not:
   the agent out of those, so Proven refuses such a config. Use a folder like `site/` or `public/`.
 - **The agent can edit only the app folder.** It cannot touch your tests, docs or config.
 - **Needs** Kane CLI with `kane-cli login`, Chrome, Claude Code, `proven` on PATH, and a start URL with a free local port.
-- **Tried on exactly one other app so far** (TodoMVC), one ticket, one agent attempt. We have not shown apps that need
+  Kane CLI runs Chrome for its steps (its own help: `--headless` "Run Chrome in headless mode"), so install Google Chrome.
+- **Tried on exactly one other app so far** (TodoMVC), in two runs, each with one ticket and one agent attempt. We have not shown apps that need
   several attempts, or a recheck that reopens something, on an app of someone else's.
 
 ## Commands
