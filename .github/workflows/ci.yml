@@ -22,7 +22,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node }}
-      - name: Tests (a fake Kane: no login, no secrets, no network)
+      - name: "Tests (a fake Kane: no login, no secrets, no network)"
         run: npm test
       - name: The judge board answers
         run: |
