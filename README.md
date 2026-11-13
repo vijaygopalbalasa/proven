@@ -1,3 +1,7 @@
+> This branch is the starting point of the recorded run: T-3 is written but not frozen.
+> Check it out, then freeze T-3, record red and run `proven loop` as shown in the "For judges" section of the README on `main`.
+> The full, current guide is `main`'s README. The text below is the older guide from before the run.
+
 # Proven
 
 A ticket closes only when Kane CLI saw its frozen test fail before the change and pass after it.
