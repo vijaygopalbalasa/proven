@@ -504,3 +504,12 @@ test('loop: a worktree or submodule, where .git is a file, is refused', async (t
   assert.match(r.stdout + r.stderr, /\.git is a file/);
   assert.equal(agentCalls(repo).length, 0);
 });
+
+test('loop: a change under node_modules during a session is tampering, ignored by git or not', async (t) => {
+  const repo = await redRepo(t);
+  const r = await repo.run(['loop', '--agent-config'], { scenario: ['green', 'green'], env: agentEnv(repo, { FAKE_AGENT_MODE: 'node-modules' }) });
+  assert.equal(r.code, 1, r.stdout + r.stderr);
+  const text = r.stdout + '\n' + r.stderr;
+  assert.match(text, /^Proven's own files changed during the agent's session: .*node_modules\/x\/index\.js.*\. Nothing from this session is trusted\.$/m);
+  assert.doesNotMatch(text, /is done|Rechecking|Loop finished/);
+});

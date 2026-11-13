@@ -119,16 +119,12 @@ test('init says so when there is no .proven/config.json, and stays quiet when th
   assert.match(r.stderr, /no \.proven\/config\.json.*demo\/app.*"app": "<folder>".*run proven init again/s);
 });
 
-test('loop does not hash node_modules: an ignored change there during a session is not tampering', async (t) => {
+test('loop hashes node_modules in another layout too: a change there during a session is tampering', async (t) => {
   const repo = await foreignRepo(t);
   const r = await repo.run(['loop', '--agent-config'], { scenario: ['green', 'green'], env: agentEnv(repo, { FAKE_AGENT_APP: 'site', FAKE_AGENT_MODE: 'node-modules' }) });
-  assert.equal(r.code, 0, r.stdout + r.stderr);
+  assert.equal(r.code, 1, r.stdout + r.stderr);
+  assert.match(r.stdout + r.stderr, /Proven's own files changed during the agent's session: .*node_modules\/x\/index\.js/);
 });
-
-import { mkdirSync, writeFileSync } from 'node:fs';
-function require_fs() {
-  return { mkdirSync, writeFileSync };
-}
 
 test('init makes sure git ignores what Kane writes, which carries the runner\'s name and email', async (t) => {
   const repo = await makeRepo(t);
