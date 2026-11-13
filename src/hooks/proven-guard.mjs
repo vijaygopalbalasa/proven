@@ -415,12 +415,13 @@ function segmentProblem(words) {
       else if (/^-[nEr]+$/.test(w)) quiet ||= w.includes('n');
       else if (w === '-e') scripts.push(args[++i] ?? '');
       else if (w.startsWith('--expression=')) scripts.push(w.slice(13));
-      else if (w.startsWith('-')) return 'the guard allows only these flags for sed: -n -e -E -r --quiet --silent, with print-only scripts';
+      else if (w.startsWith('-')) return 'the guard allows only these flags for sed: -n -e -E -r --quiet --silent, with line-number print scripts';
       else files.push(w);
     }
     if (!scripts.length && files.length) scripts.push(files.shift());
-    const PRINT = /^(\d+|\$|\/[^/]*\/)?(,(\d+|\$|\/[^/]*\/))?p$/;
-    if (!quiet || !scripts.length || !scripts.every((x) => PRINT.test(x.trim()))) return 'sed is allowed only with -n and print commands';
+    // Line numbers only: no regex address, which could hide a newline, a backslash or a second command (such as e or w).
+    const PRINT = /^(\d+|\$)(,(\d+|\$))?p$/;
+    if (!quiet || !scripts.length || !scripts.every((x) => !/[\\\n;]/.test(x) && PRINT.test(x.trim()))) return 'sed is allowed only with -n and line-number print scripts such as 1,20p or $p (use grep to search)';
   }
   return null;
 }

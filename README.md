@@ -4,8 +4,6 @@
 
 # Proven
 
-[![CI](https://github.com/vijaygopalbalasa/proven/actions/workflows/ci.yml/badge.svg)](https://github.com/vijaygopalbalasa/proven/actions/workflows/ci.yml)
-
 **A ticket closes only when Kane CLI saw its frozen test fail before the change and pass after it.**
 
 Coding agents say "done" before it is true. With Proven, a person freezes a ticket's acceptance test first. Kane must
@@ -38,7 +36,7 @@ What Kane caught in the recorded run (a demo shop with coupon codes). The demo t
 
 1. **See it (30 seconds).** `npm start` shows the board over the receipts committed here. Each card's receipt is re-checked
    with git when the board loads. Needs Node.js 22 or newer. No install, no login.
-2. **Run the tests.** `npm test` runs 154 tests, every command end to end, on a fake Kane (no login). It takes about 1 to 3 minutes.
+2. **Run the tests.** `npm test` runs 155 tests, every command end to end, on a fake Kane (no login). It takes about 1 to 3 minutes.
 3. **Verify a receipt.** `node bin/proven.js verify receipts/T-1.json` checks it with git alone, no network. With a Kane
    login, add `--replay` and Kane runs the frozen test again with the app at red (must fail) and at green (must pass).
    Replay serves the app on port 8091, so nothing else may listen there.

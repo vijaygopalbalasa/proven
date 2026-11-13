@@ -20,7 +20,7 @@
 - A person's steps: `proven new`, `proven freeze`, `proven red` and `proven loop`.
 - Bash is an allowlist. A command is allowed only if every segment (split on `|`, `&&`, `||`, `;` and newlines) is one of:
   - `proven done T-N` (as `node bin/proven.js done T-N`, `node ./bin/proven.js done T-N` or `proven done T-N`);
-  - a read-only program: `cat`, `head`, `tail`, `ls`, `wc`, `grep`, `rg`, `find`, `sed -n` with print commands, `sort`,
+  - a read-only program: `cat`, `head`, `tail`, `ls`, `wc`, `grep`, `rg`, `find`, `sed -n` with line-number print scripts such as `1,20p`, `sort`,
     `uniq`, `diff`, `jq`, `echo`, `pwd`, `file`, `stat`, `tree`;
   - a read-only git subcommand: `log`, `show`, `diff`, `status`, `rev-parse`, `ls-files`, `blame`, `grep`, `cat-file`,
     `branch --list`.
