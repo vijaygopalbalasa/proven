@@ -61,7 +61,7 @@ What Kane caught in the recorded run (a demo shop with coupon codes). The demo t
    - Claude Code (`claude`), which runs headless (`claude -p`) on your own account and quota. Its first run in a folder
      may ask you to trust it.
    - Node.js 22 or newer (we tested on 24), and git with `user.name` and `user.email` set.
-   - We tested on macOS only.
+   - We tested on macOS (Node 24) and on Linux (Node 22 and 24, in Docker).
 6. **Fallback without credits.** The receipts and state of the recorded run are committed here. `verify` works offline,
    and [docs/recorded-run.md](docs/recorded-run.md) has the real terminal output of the run, line by line.
 7. **Dates.** The first commit is `68295c6`, at 2026-11-13 02:20 IST (Nov 12 20:50 UTC). The history is as written.
@@ -193,6 +193,8 @@ a person, agent stopped without a green or a reopen at the end, 2 something did 
 - Receipts are tamper-evident for the files they hash. Kane does not sign them.
 - The guard rails are not a sandbox. The guard blocks writes to Proven's own code, and `proven loop` checks git and file
   hashes after every agent session, but an agent with a shell can still try to get around both.
+- Run Proven as the user who owns the clone: git refuses repositories owned by someone else ("dubious ownership"), and Proven
+  does not read your global `safe.directory`, so it then says "Run proven inside a git repository".
 - Proven runs git without your global git config. If the repository has no `user.name` or `user.email` of its own, it
   reads yours once from `git config --global` at startup, and refuses to commit if there is none.
 - The app must be static files for now, because Proven serves its own snapshot of the app folder while Kane runs, and
