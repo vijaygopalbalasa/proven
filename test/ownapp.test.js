@@ -129,3 +129,22 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 function require_fs() {
   return { mkdirSync, writeFileSync };
 }
+
+test('init makes sure git ignores what Kane writes, which carries the runner\'s name and email', async (t) => {
+  const repo = await makeRepo(t);
+  repo.git('rm', '-q', '-f', '.gitignore');
+  repo.write('.gitignore', 'node_modules/\n.DS_Store');
+  let r = await repo.run(['init']);
+  assert.equal(r.code, 0, r.stderr);
+  const lines = repo.read('.gitignore').split('\n');
+  for (const want of ['node_modules/', '.DS_Store', '.testmuai/', 'tickets/output-*/', '.proven/runs/', '*.evidence']) assert.ok(lines.includes(want), want);
+  assert.match(r.stdout, /\.gitignore/);
+  const once = repo.read('.gitignore');
+  r = await repo.run(['init']);
+  assert.equal(repo.read('.gitignore'), once, 'a second init changes nothing');
+  assert.doesNotMatch(r.stdout, /Added to \.gitignore/);
+  // no .gitignore at all
+  rmSync(join(repo.dir, '.gitignore'));
+  r = await repo.run(['init']);
+  assert.ok(repo.read('.gitignore').includes('.testmuai/'));
+});

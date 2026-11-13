@@ -16,6 +16,10 @@ export const SECTION_END = '<!-- proven:end -->';
 // proven done room to finish in the foreground (measured: a 90 s command returned its output with these set).
 export const BASH_TIMEOUTS = { BASH_DEFAULT_TIMEOUT_MS: 600000, BASH_MAX_TIMEOUT_MS: 900000 };
 
+// What Kane and Proven write locally. Kane's evidence packs and recordings carry the runner's name, email and session ids,
+// so git must never pick them up with a careless git add -A.
+export const IGNORE_LINES = ['.testmuai/', 'tickets/output-*/', '.proven/runs/', '*.evidence'];
+
 export function claudeSection({ proven, app, maxAttempts }) {
   return `${SECTION_START}
 ## Proven: how tickets close here
@@ -103,6 +107,15 @@ export async function cmdInit({ root, config, out }) {
   chmodSync(guardFile, 0o755);
   writeFileSync(settingsFile, JSON.stringify(settings, null, 2) + '\n');
   writeFileSync(claudeFile, claude);
+  const ignoreFile = join(root, '.gitignore');
+  const ignoreText = existsSync(ignoreFile) ? readFileSync(ignoreFile, 'utf8') : '';
+  const present = new Set(ignoreText.split('\n').map((l) => l.trim()));
+  const missing = IGNORE_LINES.filter((l) => !present.has(l));
+  if (missing.length) {
+    const comment = "# Kane's evidence and recordings carry the runner's name and email: never commit them.";
+    writeFileSync(ignoreFile, (ignoreText && !ignoreText.endsWith('\n') ? ignoreText + '\n' : ignoreText) + (ignoreText ? '\n' : '') + `${comment}\n${missing.join('\n')}\n`);
+    out.say(`Added to .gitignore: ${missing.join(' ')}. Kane's evidence carries the runner's name and email.`);
+  }
 
   out.say(`Wrote ${GUARD_PATH}: it stops the agent from changing tickets/, receipts/, .proven/ and .claude/, and from running proven new, freeze and red.`);
   out.say(`Updated ${SETTINGS_PATH}: a PreToolUse hook runs the guard, and Bash calls may take up to 10 minutes, for Kane.`);
