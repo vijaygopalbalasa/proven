@@ -79,7 +79,7 @@ tree Kane judged, a state file, a receipt). If not, it prints "Proven's own file
 trusts nothing from that session, runs no recheck and exits 1. A person's uncommitted change to those files stops the
 loop before it starts. `proven loop` does not trust a verdict made inside the agent's session: after every session it checks git and hashes
 of Proven's files (including ignored files, `.git/config`, hooks and every `.gitignore`), then re-runs Kane on every
-closed ticket from its own code before it reports done; `verify --replay` remains the check anyone can run. This is a
+closed ticket from its own code (every git command Proven makes ignores replace objects and system and global git config; refs, `.git/info/grafts`, `attributes`, `alternates` and every `.gitattributes` are part of the check, and the Kane program is hashed before the loop and checked again before each recheck) before it reports done; `verify --replay` remains the check anyone can run. This is a
 check, not a sandbox. It does not raise the attempt limit: a ticket that needs a person stops there, and so does an agent
 that exits without a green. It does not decide anything: Kane's result through `proven done` and `proven recheck` is
 the only verdict. If the agent program is not on PATH it says "did not run" and exits 2. Exit codes: 0 every ticket it
@@ -201,6 +201,7 @@ pinned when a ticket is frozen.
   like Proven's, a state file, a receipt). The stronger check is `verify --replay`, where Kane itself runs the frozen
   test again at red and at green.
 - Receipts are tamper-evident for the files they hash. Kane does not sign them.
+- `proven loop` checks what it can see; the strongest check is `verify --replay` run by someone else on their own machine.
 - The guard rails are not a sandbox, which is why done is shown only for a receipt that verifies. The guard blocks writes
   to Proven's own code, and `proven loop` checks git after every agent session that Proven's code and history were not
   touched, but an agent with a shell can still try to get around both. `verify --replay` stays the strongest check,

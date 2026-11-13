@@ -4,11 +4,17 @@ import { join } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { Refusal } from './errors.js';
 
+// Every git command Proven makes runs with replace objects switched off and without system or global config, so a
+// refs/replace ref or a config the agent does not control cannot change what a commit, tree or file looks like.
+export function gitEnv(base = process.env, extra = {}) {
+  return { ...base, GIT_NO_REPLACE_OBJECTS: '1', GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: '/dev/null', ...extra };
+}
+
 export function git(root, args, { env, input, buffer = false, allowFail = false } = {}) {
   try {
     const result = execFileSync('git', args, {
       cwd: root,
-      env: env ?? process.env,
+      env: gitEnv(env ?? process.env),
       input,
       stdio: ['pipe', 'pipe', 'pipe'],
       maxBuffer: 512 * 1024 * 1024,
@@ -44,7 +50,7 @@ export function resolveCommit(root, ref) {
 }
 
 export function isAncestor(root, ancestor, descendant) {
-  const result = spawnSync('git', ['merge-base', '--is-ancestor', ancestor, descendant], { cwd: root, stdio: 'ignore' });
+  const result = spawnSync('git', ['merge-base', '--is-ancestor', ancestor, descendant], { cwd: root, stdio: 'ignore', env: gitEnv() });
   if (result.status === 0) return true;
   if (result.status === 1) return false;
   throw new Error(`git could not compare ${short(ancestor)} and ${short(descendant)}`);
@@ -87,7 +93,7 @@ export function dirtyPaths(root, path) {
 }
 
 export function isIgnored(root, path) {
-  const result = spawnSync('git', ['check-ignore', '-q', '--no-index', path], { cwd: root, stdio: 'ignore' });
+  const result = spawnSync('git', ['check-ignore', '-q', '--no-index', path], { cwd: root, stdio: 'ignore', env: gitEnv() });
   return result.status === 0;
 }
 

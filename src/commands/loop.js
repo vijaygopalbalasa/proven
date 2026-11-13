@@ -1,6 +1,7 @@
 import { spawn } from 'node:child_process';
-import { lstatSync, readdirSync, readFileSync, readlinkSync } from 'node:fs';
-import { join } from 'node:path';
+import { accessSync, constants, lstatSync, readdirSync, readFileSync, readlinkSync, realpathSync } from 'node:fs';
+import { delimiter, join } from 'node:path';
+import { kaneCommand } from '../config.js';
 import { canonicalJson, sha256 } from '../hash.js';
 import { bypassFlag, loadAgentCommand, wantsStreamJson, AGENT_PATH } from '../agent.js';
 import { Refusal } from '../errors.js';
@@ -145,6 +146,7 @@ async function session(ctx, id, i, n, cmd, streamJson) {
   }
   const pre = { state: loadState(root, id) };
   const hashesBefore = hashTree(root);
+  const refsBefore = refsSnapshot(root);
   out.say(`${id}: starting the agent (${i} of ${n}).`);
   const result = await runAgent(ctx, id, cmd, status === 'reopened' ? reopenedPrompt(id) : redPrompt(id), streamJson);
   if (result.notStarted) {
@@ -156,7 +158,7 @@ async function session(ctx, id, i, n, cmd, streamJson) {
     );
     return 'not-run';
   }
-  const tampered = sessionTampering(ctx, id, before, pre, hashesBefore);
+  const tampered = sessionTampering(ctx, id, before, pre, hashesBefore, refsBefore);
   if (tampered.length) {
     out.both(`Proven's own files changed during the agent's session: ${tampered.join(', ')}. Nothing from this session is trusted.`);
     return 'tampered';
@@ -190,7 +192,7 @@ function changedOwn(root, paths) {
 
 // Everything whose change would change the judge or what Proven trusts, hashed byte for byte, ignored files included.
 // Kane's recordings under tickets/output-* are the one thing proven done writes there, and they are never trusted.
-const HASHED = ['bin', 'src', 'package.json', 'package-lock.json', '.claude', 'test', 'node_modules', 'tickets', '.proven/config.json', '.git/info/exclude', '.git/config', '.git/hooks'];
+const HASHED = ['bin', 'src', 'package.json', 'package-lock.json', '.claude', 'test', 'node_modules', 'tickets', '.proven/config.json', '.git/info/exclude', '.git/config', '.git/hooks', '.git/info/grafts', '.git/info/attributes', '.git/objects/info/alternates'];
 const SKIP_DIRS = new Set(['.git', 'node_modules', '.testmuai']);
 
 function hashTree(root) {
@@ -207,7 +209,7 @@ function hashTree(root) {
     else if (st.isDirectory()) {
       if (name.startsWith('output-')) return;
       for (const child of readdirSync(join(root, rel)).sort()) visit(`${rel}/${child}`, { ignoreFiles });
-    } else if (!ignoreFiles || name === '.gitignore') map.set(rel, sha256(readFileSync(join(root, rel))));
+    } else if (!ignoreFiles || name === '.gitignore' || name === '.gitattributes') map.set(rel, sha256(readFileSync(join(root, rel))));
   };
   for (const rel of HASHED) visit(rel);
   // Every .gitignore in the project decides what git leaves out.
@@ -216,7 +218,7 @@ function hashTree(root) {
       const path = rel ? `${rel}/${child}` : child;
       const st = lstatSync(join(root, path));
       if (st.isDirectory() && !SKIP_DIRS.has(child) && !child.startsWith('output-')) walk(path);
-      else if (child === '.gitignore') map.set(path, sha256(readFileSync(join(root, path))));
+      else if (child === '.gitignore' || child === '.gitattributes') map.set(path, sha256(readFileSync(join(root, path))));
     }
   };
   walk('');
@@ -227,6 +229,49 @@ function hashDiff(before, after) {
   const out = [];
   for (const k of new Set([...before.keys(), ...after.keys()])) if (before.get(k) !== after.get(k)) out.push(k);
   return out;
+}
+
+// Every ref and what HEAD points at. Only the current branch may move, and sessionCommits checks how.
+function refsSnapshot(root) {
+  const refs = new Map();
+  for (const line of (git(root, ['for-each-ref', '--format=%(objectname) %(refname)'], { allowFail: true }) ?? '').split('\n').filter(Boolean)) {
+    const at = line.indexOf(' ');
+    refs.set(line.slice(at + 1), line.slice(0, at));
+  }
+  return { refs, symbolic: (git(root, ['symbolic-ref', '-q', 'HEAD'], { allowFail: true }) ?? '').trim() };
+}
+
+function refsDiff(before, after) {
+  const out = [];
+  if (before.symbolic !== after.symbolic) out.push('HEAD');
+  for (const k of new Set([...before.refs.keys(), ...after.refs.keys()])) {
+    if (k !== before.symbolic && before.refs.get(k) !== after.refs.get(k)) out.push(k);
+  }
+  return out;
+}
+
+// The Kane program: where kane-cli (or the test fake) is, with symlinks followed, and a hash of that entry file.
+function kaneIdentity() {
+  const { command } = kaneCommand();
+  const entry = command[0] === process.execPath && command[1] ? command[1] : command[0];
+  let path = entry.includes('/') ? entry : null;
+  if (!path) {
+    for (const dir of (process.env.PATH ?? '').split(delimiter).filter(Boolean)) {
+      try {
+        accessSync(join(dir, entry), constants.X_OK);
+        if (lstatSync(join(dir, entry)).isDirectory()) continue;
+        path = join(dir, entry);
+        break;
+      } catch {}
+    }
+  }
+  if (!path) return { path: entry, hash: null };
+  try {
+    const real = realpathSync(path);
+    return { path: real, hash: sha256(readFileSync(real)) };
+  } catch {
+    return { path, hash: null };
+  }
 }
 
 // Paths git is told to ignore the changes of (skip-worktree or assume-unchanged), under the protected paths.
@@ -295,9 +340,9 @@ function sessionCommits(ctx, id, before, pre) {
 }
 
 // After an agent session. Returns what says Proven's code, git setup, tickets or history were touched.
-function sessionTampering(ctx, id, before, pre, hashesBefore) {
+function sessionTampering(ctx, id, before, pre, hashesBefore, refsBefore) {
   const { root } = ctx;
-  const bad = [...changedOwn(root, [...OWN_PATHS, 'tickets']), ...hashDiff(hashesBefore, hashTree(root)), ...hiddenFlags(root)];
+  const bad = [...changedOwn(root, [...OWN_PATHS, 'tickets']), ...hashDiff(hashesBefore, hashTree(root)), ...hiddenFlags(root), ...refsDiff(refsBefore, refsSnapshot(root)).map((r) => (r === 'HEAD' ? 'HEAD' : r))];
   if (head(root) !== before && git(root, ['merge-base', '--is-ancestor', before, 'HEAD'], { allowFail: true }) === null) bad.push('history was rewritten');
   bad.push(...sessionCommits(ctx, id, before, pre));
   return [...new Set(bad)];
@@ -351,6 +396,7 @@ export async function cmdLoop(ctx, ids, flags = {}) {
     return notReady ? 2 : stuck ? 1 : 0;
   }
 
+  const kaneBefore = kaneIdentity();
   for (let round = 0; ; round++) {
     let stopped = stuck;
     const closed = [];
@@ -367,6 +413,11 @@ export async function cmdLoop(ctx, ids, flags = {}) {
     }
     // Nothing a session says is taken as the verdict: Kane runs again, from this process's own code, on every done
     // ticket, including the ones the agent just closed.
+    const kaneNow = kaneIdentity();
+    if (kaneNow.path !== kaneBefore.path || kaneNow.hash !== kaneBefore.hash) {
+      out.both(`did not run: the Kane program ${kaneNow.path} changed since the loop started. Nothing was rechecked.`);
+      return 2;
+    }
     const recheckResults = new Map();
     const code = await cmdRecheck({ ...ctx, recheckResults }, []);
     let unconfirmed = false;
