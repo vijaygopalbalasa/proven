@@ -32,6 +32,18 @@ What Kane caught in the recorded run (a demo shop with coupon codes). The demo t
 - The agent's fix for that ticket broke an older one. A fresh Kane run failed it, and a second fresh run agreed: "The cart rejects the valid SAVE10 coupon, so the order total remains $30.00 instead of $27.50." The older ticket reopened by itself.
 - The loop handed it back, the agent fixed it, Kane passed it, and `proven verify --replay` ran Kane again at red and at green: CONFIRMED.
 
+## What Kane saw (its own screenshots)
+
+Three of Kane CLI's own step screenshots, cropped to the cart (the demo shop is all that is on screen):
+
+<table>
+<tr>
+<td width="33%"><img src="docs/images/kane-t3-red.jpg" alt="Kane's screenshot of the cart: FALL15 typed, 'That code is not valid.', order total $30.00"><br><sub>T-3 before the change: Kane typed FALL15, the shop said "That code is not valid." and the total stayed $30.00 (red).</sub></td>
+<td width="33%"><img src="docs/images/kane-t3-green.jpg" alt="Kane's screenshot of the cart: FALL15 typed, 'Coupon applied: 15% off your items.', order total $26.25"><br><sub>T-3 after the change: the same test, "Coupon applied: 15% off your items." and the total is $26.25 (green).</sub></td>
+<td width="33%"><img src="docs/images/kane-t1-reopen.jpg" alt="Kane's screenshot of the cart during the recheck: SAVE10 typed, 'That code is not valid.', order total $30.00"><br><sub>T-1 on the recheck: SAVE10 typed, "That code is not valid." and $30.00, so T-1 reopened.</sub></td>
+</tr>
+</table>
+
 ## For judges
 
 1. **See it (30 seconds).** `npm start` shows the board over the receipts committed here. Each card's receipt is re-checked
@@ -218,7 +230,8 @@ a person, agent stopped without a green or a reopen at the end, 2 something did 
   the start URL must be local with a port, like http://localhost:8091/.
 - Kane's verdicts can be flaky. That is why red needs a passing landmark and a failing later step, why anything unclear
   counts as "did not run", and why recheck confirms a failure with a second fresh run before it reopens anything.
-- Evidence packs are not committed, because they carry the runner's name and email. Proven keeps only their sha256.
+- Evidence packs are not committed, because they carry the runner's name and email. Proven keeps only their sha256. Three
+  of Kane's own step screenshots (the demo cart only, cropped) are in `docs/images`.
   Kane's recording folder (`tickets/output-T-N/`) stays local for the same reason and is never used for a verdict. So
   every run authors every step: a minute or two and about 10 to 30 credits each.
 - `recheck`, `loop` and `verify --replay` run Kane, so they need Kane CLI, Chrome, a login and credits. All three ran
