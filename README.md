@@ -14,7 +14,7 @@ Demo video (2 min): VIDEO_LINK_TODO
 **Try it in 30 seconds, with no install and no login:**
 
 ```
-git clone <this repository's URL> proven
+git clone https://github.com/vijaygopalbalasa/proven proven
 cd proven
 npm start          # then open http://127.0.0.1:8090/
 ```
@@ -50,10 +50,10 @@ What Kane caught in the recorded run (a demo shop with coupon codes):
 ### Honest disclosure
 
 T-3 was written on purpose so that its plain reading (take the coupon codes from `coupons.json`) breaks T-1 (requirement
-8.1 in [docs/requirements.md](docs/requirements.md)). The agent took that reading on its own in all 3 live runs on Nov 13,
-and the recheck reopened T-1 each time: rehearsal 1 at `a51f39f`, rehearsal 2 at `ed46d29`, the filmed run at `fb9d347`.
-Each reopen was a fresh run that failed, then a second fresh run that failed again. Only the filmed run is in this clone's
-history. So the reopen is real, but it is not a surprise: the demo is built to show it.
+8.1 in [docs/requirements.md](docs/requirements.md)). The agent took that reading on its own in all three live runs that day: two rehearsals in throwaway copies (their logs
+are not in this repo) and the filmed run recorded here. The recheck reopened T-1 each time: rehearsal 1 at `a51f39f`,
+rehearsal 2 at `ed46d29`, the filmed run at `fb9d347`. Each reopen was a fresh run that failed, then a second fresh run
+that failed again. So the reopen is real, but it is not a surprise: the demo is built to show it.
 
 ## The recorded run
 
