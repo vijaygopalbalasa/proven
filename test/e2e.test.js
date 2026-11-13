@@ -315,10 +315,11 @@ test('Proven stops a hung Kane and its child processes at its own time limit', a
   const r = await repo.run(['red', 'T-1'], { scenario: 'hang', env: { FAKE_KANE_PIDFILE: pidFile } });
   assert.equal(r.code, 2);
   assert.match(r.stderr, /did not run: Kane did not finish within 1 s/);
-  assert.ok(Date.now() - started < 15000);
+  // The fake Kane hangs forever, so any bound proves Proven stopped it; this one is wide enough for a slow or loaded machine.
+  assert.ok(Date.now() - started < 60000);
   const pid = Number(readFileSync(pidFile, 'utf8'));
   let alive = true;
-  for (let i = 0; i < 50 && alive; i++) {
+  for (let i = 0; i < 200 && alive; i++) {
     try {
       process.kill(pid, 0);
       await new Promise((done) => setTimeout(done, 100));

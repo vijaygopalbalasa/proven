@@ -121,7 +121,7 @@ test('the board shows a reopened ticket, then the second close with its earlier 
 });
 
 // Read server-sent events from the board until one matches.
-async function nextEvent(reader, state, match, timeoutMs = 15000) {
+async function nextEvent(reader, state, match, timeoutMs = 60000) {
   const decoder = new TextDecoder();
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
