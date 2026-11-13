@@ -130,9 +130,17 @@ demo shop (about 22 there): Kane's step took 84 s instead of 45 s.
 8. **`proven verify ... | head -1` ends with a Node EPIPE stack trace** in a pipe that closes early. Cosmetic.
    We did not change it.
 
+## A second run, from a fresh clone
+
+On Nov 13 a second run, from a fresh clone of Proven, following only the "Use it on your own static app" section of the
+README, also passed on the agent's first attempt, with `proven verify` printing CONFIRMED. Kane's red words were: "Two
+completed todos are shown, but the Clear completed control does not show "(2)" as required." It used about 108 Kane
+credits. Red took about 2.5 minutes (its step 2 alone took 107 s) and `proven loop` about 5 minutes. That run is not in
+this repository either.
+
 ## What the run shows, and what it does not
 
-It shows that a person who is not us can take a static app we did not write, point Proven at its folder, freeze a
+Between them, the two runs show that a person who is not us can take a static app we did not write, point Proven at its folder, freeze a
 plain-English test, have Kane fail it, let Claude Code fix it and Kane pass it, and get a receipt that `proven verify`
 confirms. It does not show: apps that need a build step or a server (Proven only serves static files), an agent that
 needs more than one attempt, a recheck that reopens something, or any app other than this one.
