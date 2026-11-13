@@ -35,5 +35,6 @@ jobs:
             sleep 1
           done
           kill $pid || true
+          pkill -f 'proven.js board' || true
           cat board.log
           [ "$ok" = "1" ]
