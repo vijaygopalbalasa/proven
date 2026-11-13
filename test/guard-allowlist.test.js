@@ -1,5 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { mkdirSync, mkdtempSync, realpathSync, symlinkSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { decide } from '../src/hooks/proven-guard.mjs';
 
 const dir = '/tmp/proven-guard-allowlist';
@@ -70,7 +73,7 @@ test('allowlist: each read-only program allows only its safe flags, and an unkno
     'sort -n -r -u a', 'sort -k 2 -t , a', 'sort -nr a', 'uniq -c a', 'uniq -d', 'diff -u a b', 'diff -rq a b', 'jq -r . a', 'jq -c -S . a', 'tree -L 2 -a -d', 'tree -L2',
     'echo hi there', 'pwd', 'file a', 'stat a',
     'git log --oneline -n 5', 'git log -5 --stat --graph --decorate --all', 'git log --format=%h -- demo', 'git log --pretty=oneline --name-only -- a b', 'git log -p --name-status',
-    'git show --stat HEAD', 'git show --name-only --format=%s HEAD', 'git diff --stat --cached', 'git diff -U 5 --no-color -- demo', 'git diff --name-status --staged',
+    'git show --stat HEAD', 'git show --name-only --format=%s HEAD', 'git diff --stat --cached', 'git diff -U5 --no-color -- demo', 'git diff --name-status --staged',
     'git status -s -b', 'git status --porcelain', 'git rev-parse --short HEAD', 'git rev-parse --abbrev-ref HEAD', 'git rev-parse --show-toplevel', 'git ls-files -- demo',
     'git blame -L 1,5 demo/app/cart.js', 'git grep -n -i -e coupon -w -l', 'git cat-file -p HEAD', 'git cat-file -t HEAD', 'git branch --list',
   ];
@@ -81,6 +84,7 @@ test('allowlist: each read-only program allows only its safe flags, and an unkno
     'cat -v a', 'cat --number a', 'head -q a', 'tail -f a', 'tail --follow a', 'ls -S', 'ls --recursive', 'ls -lZ', 'wc -m a', 'grep -P x a', 'grep -f pats a', 'grep --exclude-dir=x -r y .', 'grep -z x a',
     'rg --pre sh x', 'rg --files', 'rg -u x', 'find . -newer a', 'find . -regex x', 'find . -fprint x', 'find . -printf x', 'find . -exec x', 'sort -T /tmp a', 'sort -S 1G a', 'uniq -f 1 a', 'diff -y a b', 'diff --to-file=x a', 'jq -f x a', 'jq --arg a b . c', 'tree -o f', 'tree --du',
     'echo -n x', 'echo -e x', 'pwd -P', 'file -C', 'file -m x a', 'stat -f x a', 'awk 1 a', 'awk "{print}" a',
+    'git diff -U --output=/tmp/x', 'git diff -U 5', 'git diff -U --output=/tmp/x HEAD', 'git log --output=/tmp/x', 'git log --output /tmp/x', 'git show --output=/tmp/x HEAD', 'git diff -- --output=/tmp/x', 'git grep -e --output=/tmp/x', 'git log -n --output=x', 'head -n --output=x a', 'tree -L --output=x',
     'git log --all-match', 'git log --graph-x', 'git status -u', 'git rev-parse --git-dir', 'git ls-files -o', 'git ls-files -z', 'git blame -w a', 'git cat-file --batch', 'git branch -a', 'git show -s HEAD', 'git diff --patch', 'git diff -w',
   ];
   for (const command of blocked) assert.match(call(command) ?? '', /Proven: /, `should be blocked: ${command}`);
@@ -101,4 +105,33 @@ test('allowlist: the lexer is strict, and an unquoted word may hold only letters
     'node bin/proven.js done T-1',
     "grep -n 'a$' demo/app/cart.js", 'grep -n "a b" demo/app/cart.js', 'cat a,b:c=d@e%f+g-h_i.j/k',
   ]) assert.equal(call(command), null, command);
+});
+
+test('allowlist: a valued flag takes a value that does not itself start with a dash, unless it is a number', () => {
+  assert.equal(call('head -n -5 a'), null);
+  assert.equal(call('grep -A 3 -e coupon a'), null);
+  for (const command of ['grep -e -foo a', 'sort -t -o a', 'find . -name -delete', 'head -n -x a', 'rg -g --pre x']) assert.match(call(command) ?? '', /Proven: /, command);
+});
+
+test('edit tools may write only inside the project: outside the root is denied, also through a symlink', () => {
+  const base = realpathSync(mkdtempSync(join(tmpdir(), 'proven-guard-root-')));
+  const project = join(base, 'project');
+  const outside = join(base, 'outside');
+  mkdirSync(join(project, 'site'), { recursive: true });
+  mkdirSync(outside);
+  symlinkSync(outside, join(project, 'site', 'link'));
+  const edit = (tool, input, cwd = project) => decide({ tool_name: tool, tool_input: input, cwd }, { projectDir: project });
+  for (const [tool, key] of [['Write', 'file_path'], ['Edit', 'file_path'], ['MultiEdit', 'file_path'], ['NotebookEdit', 'notebook_path']]) {
+    assert.equal(edit(tool, { [key]: join(project, 'site', 'a.html') }), null, `${tool} inside the app`);
+    for (const target of [join(base, 'x.txt'), '../x.txt', '../../etc/x', '/etc/hosts', join(outside, 'x'), 'site/link/x', join(project, 'site', 'link', 'x'), 'site/link']) {
+      assert.match(edit(tool, { [key]: target }) ?? '', /outside the project/, `${tool} ${target}`);
+    }
+  }
+  const home = join(base, 'home');
+  assert.match(edit('Edit', { file_path: join(home, '.gitconfig') }) ?? '', /outside the project/);
+  assert.match(edit('Edit', { file_path: join(home, '.config', 'git', 'config') }) ?? '', /outside the project/);
+  assert.match(edit('Write', {}) ?? '', /Proven: /, 'no path at all is denied too');
+  assert.match(edit('Write', { file_path: '' }) ?? '', /Proven: /);
+  // protected paths inside the project stay protected
+  assert.match(edit('Write', { file_path: join(project, 'tickets', 'T-1.md') }) ?? '', /under tickets\//);
 });
