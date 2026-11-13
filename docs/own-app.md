@@ -16,7 +16,7 @@ on PATH through a one-line shell script that runs `node <path>/bin/proven.js` (t
 touching the global npm folder).
 
 ```
-echo '{ "app": "todomvc" }' > .proven/config.json     # where the app is (a folder inside the repo)
+mkdir -p .proven && echo '{ "app": "todomvc" }' > .proven/config.json     # where the app is (a folder inside the repo)
 git add -A && git commit -m "Tell Proven where the app is"
 proven init                                              # guard hook, CLAUDE.md, .gitignore lines
 git add -A && git commit -m "proven init"
@@ -121,7 +121,7 @@ demo shop (about 22 there): Kane's step took 84 s instead of 45 s.
 4. **The guard blocked one of the agent's commands.** It tried `grep -n -i "clear" todomvc/*.js todomvc/index.html`. The
    unquoted `*` is not allowed, so the guard blocked it, and the agent read the files with its Read tool instead. That
    is the intended behaviour, but it is a wasted call, and a stranger will see it.
-5. **`proven init` reads the app folder from `.proven/config.json`,** so the config has to exist first (we wrote it first).
+5. **`proven init` reads the app folder from `.proven/config.json`,** so the config has to exist first (we wrote it first; `.proven/` does not exist in a fresh repo, so the command starts with `mkdir -p .proven`).
    If it is missing, `proven init` now says so and names the default app folder it used.
 6. **Doubled lines.** When `proven loop` writes both streams to one file, each result line appears twice. Cosmetic.
    It only prints once to a terminal. We did not change it.
