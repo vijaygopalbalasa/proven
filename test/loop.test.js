@@ -79,6 +79,8 @@ test('loop: tool calls are shown by name and path or command only, never content
   assert.equal(r.code, 0, r.stdout + r.stderr);
   assert.match(r.stdout, /^T-1 agent: Read tickets\/T-1\.md$/m);
   assert.match(r.stdout, /^T-1 agent: Edit demo\/app\/styles\.css$/m);
+  assert.match(r.stdout, /^T-1 agent: Read demo\/app\/index\.html$/m, 'absolute paths inside the repo are shown relative to it');
+  assert.match(r.stdout, /^T-1 agent says: Reading the ticket\. I will fix the app, not the test\.$/m, 'the agent\'s own words, on one line');
   const bash = r.stdout.split('\n').find((l) => l.startsWith('T-1 agent: Bash '));
   assert.ok(bash, r.stdout);
   assert.ok(bash.length <= 'T-1 agent: Bash '.length + 100, `truncated: ${bash.length}`);

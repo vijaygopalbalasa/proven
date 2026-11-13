@@ -17,6 +17,9 @@ const emit = (content) => process.stdout.write(JSON.stringify({ type: 'assistant
 const SECRET_BODY = 'FILE-CONTENT-THAT-MUST-NOT-BE-PRINTED';
 
 emit([{ type: 'tool_use', name: 'Read', input: { file_path: `tickets/${id}.md` } }]);
+// A real agent sends absolute paths and says things between tool calls.
+emit([{ type: 'text', text: 'Reading the ticket.\nI will fix the app, not the test.' }]);
+emit([{ type: 'tool_use', name: 'Read', input: { file_path: `${process.cwd()}/demo/app/index.html` } }]);
 process.stdout.write('this line is not json\n');
 
 if (process.env.FAKE_AGENT_MODE === 'quit') process.exit(Number(process.env.FAKE_AGENT_EXIT ?? 3));
