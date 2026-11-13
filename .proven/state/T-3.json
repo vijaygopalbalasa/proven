@@ -1,0 +1,20 @@
+{
+  "ticket": "T-3",
+  "frozen_commit": "c4d986966219f5927c9527356a2f183740f9b2a8",
+  "status": "red",
+  "attempts": 0,
+  "red": {
+    "commit": "452057bf8ad60fc7ecbd7470696c8b814b0f6cdb",
+    "failed_step": 2,
+    "failed_step_title": "Apply FALL15",
+    "kane_one_liner": "The cart rejects the required FALL15 coupon, so the order total remains $30.00 instead of $26.25.",
+    "kane_reason": "Final verification failed: \"the order total shows $26.25\"",
+    "duration_s": 64,
+    "credits": 22.54,
+    "evidence_sha256": "97ef88f4fe64d9fdb19325d6d3462f6bf2fd5ac0306f5cc65c9fc99e0712509a",
+    "kane": "kane-cli",
+    "kane_cli": "0.10.4",
+    "app_tree": "4e62914487bfb59c1c5f2b7fcbe31f512aa7bde8",
+    "at": "2026-11-13T00:44:59.651Z"
+  }
+}
