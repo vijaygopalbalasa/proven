@@ -16,29 +16,33 @@
     "ticket_sha256": "b2ed80ef27ff8339afc1b921675ee530d6acf91341166d267fb3be5cd5bc9b8b"
   },
   "red": {
-    "commit": "0c82fa03fb8ab4766957eedeb25c5e963db9aabd",
+    "commit": "fb9d347a27334431c04755de24e2911ad393e803",
     "failed_step": 2,
     "failed_step_title": "Apply SAVE10",
-    "kane_one_liner": "The test expected SAVE10 to reduce the total, but the store rejected that code and kept the total at $30.00.",
-    "kane_reason": "SAVE10 was applied but the cart reports “That code is not valid” and retains a $30.00 total.",
-    "evidence_sha256": "839a52e7267c62569d91918cbea114153465894d5dbc9c0564d2c3bce4e50b43",
+    "kane_one_liner": "The cart rejects the valid SAVE10 coupon, so the order total remains $30.00 instead of $27.50.",
+    "kane_reason": "Final verification failed: \"the order total shows $27.50\"",
+    "evidence_sha256": "a8ecc86ae09509faa2a8bedbc84b4340ecb85b05813d18e73cc4015effb85332",
     "kane": "kane-cli",
     "kane_cli": "0.10.4",
-    "duration_s": 57,
-    "credits": 29.37,
-    "app_tree": "d6006651d796bfe735335813f75458b11576b534"
+    "duration_s": 60,
+    "credits": 22.38,
+    "app_tree": "becd5838efc115f70e240e7029f64d8ead1524f3"
   },
   "green": {
-    "commit": "f5e792caa8ccd97036115b96a0ebf6441c3caa6f",
+    "commit": "8d0207ebed04986f90929692928cd378d2aaa208",
     "steps_passed": 2,
     "steps_total": 2,
-    "evidence_sha256": "e3b6820ba82e8a7f36e6e529166f8e67c44349c375e5e2c67451db5b383ce84b",
+    "evidence_sha256": "5cb0bdcfe9689d047b955f6221e6e7131e3610aee851e02181576a34ccd31d4c",
     "kane": "kane-cli",
     "kane_cli": "0.10.4",
-    "duration_s": 28,
-    "credits": 11.99,
+    "duration_s": 44,
+    "credits": 10.09,
     "failed_attempts": 0,
-    "app_tree": "09bd568df3ca32341c2994f1fce35f5c3b50e442"
+    "app_tree": "f54154b04b78c6695ff1632d42782c484aab5b6a"
   },
-  "receipt_sha256": "54cb62babf0240d7f50ba0dd9b5bc6597ef5afa08d4b39afc706edd292bbc574"
+  "previous": {
+    "commit": "b55f655934ebbeee4b1478cbc0054471aecedf29",
+    "receipt_sha256": "54cb62babf0240d7f50ba0dd9b5bc6597ef5afa08d4b39afc706edd292bbc574"
+  },
+  "receipt_sha256": "251941765587bab400ec8b85a9235093a808ce1afebb92f774dc485d887bf672"
 }
