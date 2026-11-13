@@ -47,6 +47,7 @@ if (mode === 'replace-ref') {
   const [a, b] = [sh('git', ['rev-parse', 'HEAD']).stdout.trim(), sh('git', ['rev-parse', 'HEAD~1']).stdout.trim()];
   sh('git', ['update-ref', `refs/replace/${a}`, b]);
 }
+if (mode === 'git-note') writeFileSync('.git/zzz-note', 'not on any list of chosen files');
 if (mode === 'grafts') writeFileSync('.git/info/grafts', '\n');
 if (mode === 'alternates') writeFileSync('.git/objects/info/alternates', process.cwd() + '/.git/objects\n');
 if (mode === 'attributes') appendFileSync('.git/info/attributes', '*.zzz text\n');

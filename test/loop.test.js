@@ -1,11 +1,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync, existsSync, mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { readFileSync, existsSync, mkdtempSync, writeFileSync, rmSync, realpathSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { decide, personStep } from '../src/hooks/proven-guard.mjs';
 import { cpSync } from 'node:fs';
-import { chmodSync } from 'node:fs';
+import { chmodSync, mkdirSync, symlinkSync } from 'node:fs';
+import { runProven } from './support/helpers.js';
 import { FAKE_KANE, couponTicket, makeRepo, PROVEN, ROOT } from './support/helpers.js';
 import { findCommittedLeaks } from './support/scan.js';
 
@@ -386,6 +387,7 @@ test('guard: .git is protected, so the agent cannot change config, hooks or refs
 
 for (const [mode, what, re] of [
   ['replace-ref', 'a refs/replace ref', /refs\/replace\//],
+  ['git-note', 'any new file under .git', /\.git\/zzz-note/],
   ['grafts', '.git/info/grafts', /\.git\/info\/grafts/],
   ['alternates', '.git/objects/info/alternates', /\.git\/objects\/info\/alternates/],
   ['attributes', '.git/info/attributes', /\.git\/info\/attributes/],
@@ -440,4 +442,60 @@ test('loop: the agent gets GIT_TEST_DISALLOW_ABBREVIATED_OPTIONS=1', async (t) =
   const r = await repo.run(['loop', '--agent-config'], { scenario: ['green', 'green'], env: agentEnv(repo) });
   assert.equal(r.code, 0, r.stdout + r.stderr);
   assert.equal(agentCalls(repo)[0].abbrev, '1');
+});
+
+test('loop: a Kane program that cannot be found or read is refused before any agent starts', async (t) => {
+  const repo = await redRepo(t);
+  const r = await repo.run(['loop', '--agent-config'], { scenario: 'red', env: agentEnv(repo, { PROVEN_KANE_BIN: '/nonexistent/kane-wrapper' }) });
+  assert.equal(r.code, 2, r.stdout + r.stderr);
+  assert.match(r.stdout + r.stderr, /^did not run: the Kane program \/nonexistent\/kane-wrapper could not be found or read\./m);
+  assert.equal(agentCalls(repo).length, 0);
+});
+
+test('kane identity: the whole package directory of the resolved program is hashed, symlinks are not followed', async () => {
+  const { kaneIdentity } = await import('../src/commands/loop.js');
+  const base = mkdtempSync(join(tmpdir(), 'proven-kanepkg-'));
+  const pkg = join(base, 'pkg');
+  mkdirSync(join(pkg, 'lib'), { recursive: true });
+  mkdirSync(join(base, 'bin'));
+  writeFileSync(join(pkg, 'package.json'), '{"name":"kane"}');
+  writeFileSync(join(pkg, 'lib', 'main.js'), '// main');
+  writeFileSync(join(pkg, 'lib', 'other.js'), '// other');
+  symlinkSync(join(pkg, 'lib', 'main.js'), join(base, 'bin', 'kane-cli'));
+  const kane = { command: ['kane-cli'], fake: false };
+  const env = { PATH: join(base, 'bin') };
+  const a = kaneIdentity(kane, env);
+  assert.equal(a.path, join(realpathSync(pkg), 'lib', 'main.js'));
+  assert.match(a.hash, /^[0-9a-f]{64}$/);
+  assert.equal(kaneIdentity(kane, env).hash, a.hash);
+  writeFileSync(join(pkg, 'lib', 'other.js'), '// other, changed');
+  assert.notEqual(kaneIdentity(kane, env).hash, a.hash, 'a change beside the entry file counts');
+  writeFileSync(join(pkg, 'lib', 'main.js'), '// main');
+  writeFileSync(join(pkg, 'lib', 'other.js'), '// other');
+  assert.equal(kaneIdentity(kane, env).hash, a.hash);
+  // not found is a null hash, which the loop treats as a failure
+  assert.equal(kaneIdentity(kane, { PATH: join(base, 'nowhere') }).hash, null);
+  // the test fake is hashed as its script alone
+  const fake = kaneIdentity({ command: [process.execPath, FAKE_KANE], fake: true }, env);
+  assert.equal(fake.path, realpathSync(FAKE_KANE));
+  rmSync(base, { recursive: true, force: true });
+});
+
+test('git: calls are pinned to the repository\'s own .git, resolved once', async (t) => {
+  const { gitEnv, pinGitDir } = await import('../src/git.js');
+  const repo = await makeRepo(t);
+  pinGitDir(repo.dir);
+  assert.equal(gitEnv({}, {}, repo.dir).GIT_DIR, join(repo.dir, '.git'));
+  assert.equal(gitEnv({}, {}, '/somewhere/else').GIT_DIR, undefined);
+});
+
+test('loop: a worktree or submodule, where .git is a file, is refused', async (t) => {
+  const repo = await redRepo(t);
+  const wt = join(mkdtempSync(join(tmpdir(), 'proven-wt-')), 'wt');
+  repo.git('worktree', 'add', '-q', wt, '-b', 'other');
+  t.after(() => rmSync(join(wt, '..'), { recursive: true, force: true }));
+  const r = await runProven(wt, ['loop', '--agent-config'], agentEnv(repo, { PROVEN_KANE_BIN: FAKE_KANE, FAKE_KANE_SCENARIO: 'red' }));
+  assert.equal(r.code, 2, r.stdout + r.stderr);
+  assert.match(r.stdout + r.stderr, /\.git is a file/);
+  assert.equal(agentCalls(repo).length, 0);
 });
