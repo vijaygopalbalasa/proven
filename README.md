@@ -33,7 +33,7 @@ What Kane caught in the recorded run (a demo shop with coupon codes):
 3. **Verify a receipt.** `node bin/proven.js verify receipts/T-1.json` checks it with git alone, no network. With a Kane
    login, add `--replay` and Kane runs the frozen test again with the app at red (must fail) and at green (must pass).
 4. **Run the whole loop yourself.** You need Kane CLI and `kane-cli login`, Google Chrome, Claude Code (`claude`), about
-   200 Kane credits and about 11 minutes. Start from the branch `try-it` (at `c6213ac`), where T-3 is written but not
+   200 Kane credits and about 11 minutes. Start from the branch `try-it` (at `7291370`), where T-3 is written but not
    frozen:
    ```
    git checkout try-it
