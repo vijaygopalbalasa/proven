@@ -3,7 +3,6 @@ const items = [
   { id: 'beans', name: 'Coffee beans, 250 g', price: 1250, qty: 1 },
 ];
 
-const coupons = { save10: 10 };
 const freeShippingFrom = 5000;
 const shippingFee = 500;
 let couponPercent = 0;
@@ -65,10 +64,22 @@ function render() {
   document.getElementById('total').textContent = money(sub - discount + shipping);
 }
 
-document.getElementById('coupon-form').addEventListener('submit', (event) => {
+async function lookupCoupon(code) {
+  try {
+    const res = await fetch('coupons.json', { cache: 'no-store' });
+    if (!res.ok) return 0;
+    const data = await res.json();
+    const match = (data.codes || []).find((c) => String(c.code).toLowerCase() === code.toLowerCase());
+    return match ? Number(match.percent_off) || 0 : 0;
+  } catch (e) {
+    return 0;
+  }
+}
+
+document.getElementById('coupon-form').addEventListener('submit', async (event) => {
   event.preventDefault();
   const code = document.getElementById('coupon').value.trim();
-  const percent = coupons[code.toLowerCase()];
+  const percent = code ? await lookupCoupon(code) : 0;
   const message = document.getElementById('coupon-message');
   if (percent) {
     couponPercent = percent;
