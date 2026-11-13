@@ -2,6 +2,7 @@ import { spawn } from 'node:child_process';
 import { accessSync, constants, existsSync, lstatSync, readdirSync, readFileSync, readlinkSync, realpathSync } from 'node:fs';
 import { delimiter, dirname, join } from 'node:path';
 import { kaneCommand } from '../config.js';
+import { invocation } from '../invocation.js';
 import { canonicalJson, sha256 } from '../hash.js';
 import { bypassFlag, loadAgentCommand, wantsStreamJson, AGENT_PATH } from '../agent.js';
 import { Refusal } from '../errors.js';
@@ -22,10 +23,12 @@ const LABELS = {
 };
 
 // The only two prompts. They name the ticket id and the files to read, and nothing Kane wrote.
-export const redPrompt = (id) =>
-  `Ticket ${id} is red. Read tickets/${id}.md and make it true in demo/app. When you believe it is done, run node bin/proven.js done ${id} and follow what it prints.`;
-export const reopenedPrompt = (id) =>
-  `proven recheck reopened ${id}. Read tickets/${id}.md and .proven/state/${id}.json for what Kane saw, fix demo/app, then run node bin/proven.js done ${id} and follow what it prints.`;
+// In Proven's own repository they read exactly as in the README (demo/app, node bin/proven.js); in another project
+// they name that project's app folder and plain proven.
+export const redPrompt = (id, { app = 'demo/app', proven = 'node bin/proven.js' } = {}) =>
+  `Ticket ${id} is red. Read tickets/${id}.md and make it true in ${app}. When you believe it is done, run ${proven} done ${id} and follow what it prints.`;
+export const reopenedPrompt = (id, { app = 'demo/app', proven = 'node bin/proven.js' } = {}) =>
+  `proven recheck reopened ${id}. Read tickets/${id}.md and .proven/state/${id}.json for what Kane saw, fix ${app}, then run ${proven} done ${id} and follow what it prints.`;
 
 // One line of plain text: control characters (colour codes, carriage returns) become spaces.
 const plain = (s) => String(s ?? '').replace(/[\u0000-\u001f\u007f]+/g, ' ').replace(/\s+/g, ' ').trim();
@@ -167,7 +170,7 @@ async function session(ctx, id, i, n, cmd, streamJson) {
   const hashesBefore = hashTree(root);
   const refsBefore = refsSnapshot(root);
   out.say(`${id}: starting the agent (${i} of ${n}).`);
-  const result = await runAgent(ctx, id, cmd, status === 'reopened' ? reopenedPrompt(id) : redPrompt(id), streamJson);
+  const result = await runAgent(ctx, id, cmd, (status === 'reopened' ? reopenedPrompt : redPrompt)(id, { app: ctx.config.app, proven: invocation(root) }), streamJson);
   if (result.notStarted) {
     const missing = result.notStarted.code === 'ENOENT';
     out.both(
@@ -211,7 +214,7 @@ function changedOwn(root, paths) {
 
 // Everything whose change would change the judge or what Proven trusts, hashed byte for byte, ignored files included.
 // Kane's recordings under tickets/output-* are the one thing proven done writes there, and they are never trusted.
-const HASHED = ['bin', 'src', 'package.json', 'package-lock.json', '.claude', 'test', 'node_modules', 'tickets', '.proven/config.json', '.git/objects/info/alternates', '.git/objects/info/http-alternates'];
+const HASHED = ['bin', 'src', 'package.json', 'package-lock.json', '.claude', 'test', 'tickets', '.proven/config.json', '.git/objects/info/alternates', '.git/objects/info/http-alternates'];
 // The whole .git directory is hashed too, except what git itself rewrites all the time (objects, logs, the index) and
 // the refs, which for-each-ref covers.
 const GIT_SKIP = new Set(['objects', 'logs', 'index', 'refs', 'packed-refs']);

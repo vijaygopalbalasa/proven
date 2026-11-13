@@ -1,7 +1,8 @@
-import { chmodSync, existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Refusal } from '../errors.js';
+import { invocation } from '../invocation.js';
 
 export const GUARD_SOURCE = fileURLToPath(new URL('../hooks/proven-guard.mjs', import.meta.url));
 export const GUARD_PATH = '.claude/hooks/proven-guard.mjs';
@@ -14,15 +15,6 @@ export const SECTION_END = '<!-- proven:end -->';
 // Kane takes a minute or more, and Claude Code stops a Bash call after 2 minutes unless told otherwise. These give
 // proven done room to finish in the foreground (measured: a 90 s command returned its output with these set).
 export const BASH_TIMEOUTS = { BASH_DEFAULT_TIMEOUT_MS: 600000, BASH_MAX_TIMEOUT_MS: 900000 };
-
-// How the agent calls Proven in this project: inside Proven's own repository it is node bin/proven.js.
-function invocation(root) {
-  try {
-    const own = realpathSync(join(root, 'bin', 'proven.js'));
-    if (own === realpathSync(fileURLToPath(new URL('../../bin/proven.js', import.meta.url)))) return 'node bin/proven.js';
-  } catch {}
-  return 'proven';
-}
 
 export function claudeSection({ proven, app, maxAttempts }) {
   return `${SECTION_START}
@@ -115,6 +107,9 @@ export async function cmdInit({ root, config, out }) {
   out.say(`Wrote ${GUARD_PATH}: it stops the agent from changing tickets/, receipts/, .proven/ and .claude/, and from running proven new, freeze and red.`);
   out.say(`Updated ${SETTINGS_PATH}: a PreToolUse hook runs the guard, and Bash calls may take up to 10 minutes, for Kane.`);
   out.say(`Updated CLAUDE.md: the agent runs ${proven} done T-N when it believes a ticket is done, and fixes the app, never the test.`);
+  if (!existsSync(join(root, '.proven', 'config.json'))) {
+    out.warn(`Note: there is no .proven/config.json, so CLAUDE.md names the default app folder, ${config.app}. If your app is somewhere else, create .proven/config.json with {"app": "<folder>"} and run proven init again.`);
+  }
   for (const note of notes) out.warn(`Note: ${note}`);
   out.say('These are guard rails, not a sandbox. Review the three files and commit them yourself.');
   return 0;
