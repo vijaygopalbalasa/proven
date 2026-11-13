@@ -115,6 +115,35 @@ git and file hashes first. Details, the agent command and exit codes: [docs/loop
 own code, and every Bash command that is not on a short read-only allowlist. It is defence in depth, not a sandbox.
 Details: [docs/guard.md](docs/guard.md).
 
+## Use it on your own static app
+
+One real run on someone else's app is in [docs/own-app.md](docs/own-app.md): the vanilla JavaScript TodoMVC example, with
+real Kane and Claude Code. Kane failed a new "Clear completed (2)" test on it, Claude Code made the one-line fix, Kane
+passed it, and `proven verify` printed CONFIRMED. What that run shows:
+
+```
+npm link                                    # once, from this repository: the agent calls plain `proven`
+cd your-repo                                # a git repository with a static app in a folder, for example site/
+echo '{ "app": "site" }' > .proven/config.json
+proven init                                 # then commit what it wrote
+proven new T-1 "Your feature" --url http://localhost:8095/ --landmark "text on the page"
+# fill in tickets/T-1.md: plain steps, each criterion ending in a Verify line
+proven freeze T-1 && proven red T-1         # Kane must fail it on your app as it is
+proven loop                                 # Claude Code fixes it, Kane passes it, a receipt is written
+```
+
+What works, and what does not:
+
+- **Static files only.** Proven serves the app folder itself while Kane runs. There is no build step and no server of
+  your own.
+- **The app folder** must be inside the repository and not `tickets`, `receipts`, `.proven`, `.git`, `.claude`, `src`,
+  `bin`, `test`, `docs`, `node_modules`, `package.json`, `package-lock.json`, `README.md` or `.gitignore`: the guard keeps
+  the agent out of those, so Proven refuses such a config. Use a folder like `site/` or `public/`.
+- **The agent can edit only the app folder.** It cannot touch your tests, docs or config.
+- **Needs** Kane CLI with `kane-cli login`, Chrome, Claude Code, `proven` on PATH, and a start URL with a free local port.
+- **Tried on exactly one other app so far** (TodoMVC), one ticket, one agent attempt. We have not shown apps that need
+  several attempts, or a recheck that reopens something, on an app of someone else's.
+
 ## Commands
 
 | Command | Who | What it does |
