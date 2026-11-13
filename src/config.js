@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { isAbsolute, join, normalize } from 'node:path';
 import { Refusal } from './errors.js';
+import { PROTECTED } from './hooks/proven-guard.mjs';
 
 export const CONFIG_PATH = '.proven/config.json';
 
@@ -36,6 +37,13 @@ export function loadConfig(root) {
   const app = normalize(merged.app.trim()).replace(/\\/g, '/').replace(/\/+$/, '');
   if (isAbsolute(app) || app === '.' || app.startsWith('..') || RESERVED.some((r) => app === r || app.startsWith(r + '/'))) {
     throw new Refusal(`${CONFIG_PATH}: "app" must be a folder inside the repository, apart from tickets/, receipts/ and .proven/.`);
+  }
+  // The guard keeps the agent out of these folders and files, so an app there could never be edited (and the loop would
+  // call an edit there tampering).
+  if (PROTECTED.includes(app.split('/')[0].toLowerCase())) {
+    throw new Refusal(
+      `${CONFIG_PATH}: "app" cannot be ${app}: the guard keeps the agent out of ${PROTECTED.join(', ')}, so an app there could never be edited. Move the app to another folder, for example site/.`,
+    );
   }
   const timeoutS = Number(merged.timeout_s);
   if (!(timeoutS > 0)) throw new Refusal(`${CONFIG_PATH}: "timeout_s" must be a number of seconds.`);

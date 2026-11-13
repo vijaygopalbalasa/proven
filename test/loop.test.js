@@ -13,10 +13,12 @@ import { findCommittedLeaks } from './support/scan.js';
 const FAKE_AGENT = join(ROOT, 'test', 'support', 'fake-agent.js');
 const KANE_WORDS = 'The cart accepts SAVE10, but applying it leaves the total at $20.00 instead of $18.00.';
 
+// The test repositories are not Proven's own repository (no bin/proven.js there), so the prompts say plain proven.
+// ownapp.test.js pins the exact strings Proven's own repository gets.
 const RED_PROMPT = (id) =>
-  `Ticket ${id} is red. Read tickets/${id}.md and make it true in demo/app. When you believe it is done, run node bin/proven.js done ${id} and follow what it prints.`;
+  `Ticket ${id} is red. Read tickets/${id}.md and make it true in demo/app. When you believe it is done, run proven done ${id} and follow what it prints.`;
 const REOPEN_PROMPT = (id) =>
-  `proven recheck reopened ${id}. Read tickets/${id}.md and .proven/state/${id}.json for what Kane saw, fix demo/app, then run node bin/proven.js done ${id} and follow what it prints.`;
+  `proven recheck reopened ${id}. Read tickets/${id}.md and .proven/state/${id}.json for what Kane saw, fix demo/app, then run proven done ${id} and follow what it prints.`;
 
 // A repo with T-1 frozen and red, and .proven/agent.json pointing at the fake agent.
 async function redRepo(t, { agent = [process.execPath, FAKE_AGENT, '--output-format', 'stream-json'], maxAttempts, commitAgent = false } = {}) {

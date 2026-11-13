@@ -1,16 +1,17 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { Refusal } from './errors.js';
+import { invocation } from './invocation.js';
 
 export const AGENT_PATH = '.proven/agent.json';
 
 // The coding agent proven loop starts. The command is a list of words, run with no shell, and the prompt is added as
 // the last word. It lives apart from .proven/config.json on purpose: locks pin the settings in config.json by hash,
 // and the agent has no say in a verdict.
-export function defaultAgentCommand() {
+export function defaultAgentCommand(proven = 'node bin/proven.js') {
   return [
     'claude', '-p', '--model', 'claude-sonnet-5-5', '--permission-mode', 'acceptEdits',
-    '--allowedTools', 'Bash(node bin/proven.js done *)', '--output-format', 'stream-json', '--verbose',
+    '--allowedTools', `Bash(${proven} done *)`, '--output-format', 'stream-json', '--verbose',
   ];
 }
 
@@ -29,7 +30,7 @@ export function bypassFlag(cmd) {
 // proven loop runs it only when the person passes --agent-config.
 export function loadAgentCommand(root) {
   const file = join(root, AGENT_PATH);
-  if (!existsSync(file)) return { command: defaultAgentCommand(), fromFile: false };
+  if (!existsSync(file)) return { command: defaultAgentCommand(invocation(root)), fromFile: false };
   let user;
   try {
     user = JSON.parse(readFileSync(file, 'utf8'));
