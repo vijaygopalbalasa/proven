@@ -29,7 +29,7 @@ What Kane caught in the recorded run (a demo shop with coupon codes):
 
 1. **See it (30 seconds).** `npm start` shows the board over the receipts committed here. Each card was re-checked with
    git just now. Needs Node.js 22 or newer. No install, no login.
-2. **Run the tests.** `npm test` runs 142 tests, every command end to end, on a fake Kane (no login).
+2. **Run the tests.** `npm test` runs 151 tests, every command end to end, on a fake Kane (no login).
 3. **Verify a receipt.** `node bin/proven.js verify receipts/T-1.json` checks it with git alone, no network. With a Kane
    login, add `--replay` and Kane runs the frozen test again with the app at red (must fail) and at green (must pass).
 4. **Run the whole loop yourself.** You need Kane CLI and `kane-cli login`, Google Chrome, Claude Code (`claude`), about
