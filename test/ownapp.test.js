@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { loadConfig } from '../src/config.js';
@@ -86,9 +86,8 @@ test('config refuses an app folder the guard keeps the agent out of', async (t) 
   const dir = mkdtempSync(join(tmpdir(), 'proven-config-'));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   const write = (app) => {
-    const fs = require_fs();
-    fs.mkdirSync(join(dir, '.proven'), { recursive: true });
-    fs.writeFileSync(join(dir, '.proven', 'config.json'), JSON.stringify({ app }));
+    mkdirSync(join(dir, '.proven'), { recursive: true });
+    writeFileSync(join(dir, '.proven', 'config.json'), JSON.stringify({ app }));
   };
   for (const app of ['site', 'public', 'demo/app', 'web/dist', 'app']) {
     write(app);

@@ -214,7 +214,7 @@ function changedOwn(root, paths) {
 
 // Everything whose change would change the judge or what Proven trusts, hashed byte for byte, ignored files included.
 // Kane's recordings under tickets/output-* are the one thing proven done writes there, and they are never trusted.
-const HASHED = ['bin', 'src', 'package.json', 'package-lock.json', '.claude', 'test', 'tickets', '.proven/config.json', '.git/objects/info/alternates', '.git/objects/info/http-alternates'];
+const HASHED = ['bin', 'src', 'package.json', 'package-lock.json', '.claude', 'test', 'node_modules', 'tickets', '.proven/config.json', '.git/objects/info/alternates', '.git/objects/info/http-alternates'];
 // The whole .git directory is hashed too, except what git itself rewrites all the time (objects, logs, the index) and
 // the refs, which for-each-ref covers.
 const GIT_SKIP = new Set(['objects', 'logs', 'index', 'refs', 'packed-refs']);
