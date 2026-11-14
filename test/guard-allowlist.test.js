@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync, realpathSync, symlinkSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, realpathSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { decide } from '../src/hooks/proven-guard.mjs';
@@ -113,23 +113,25 @@ test('allowlist: a valued flag takes a value that does not itself start with a d
   for (const command of ['grep -e -foo a', 'sort -t -o a', 'find . -name -delete', 'head -n -x a', 'rg -g --pre x']) assert.match(call(command) ?? '', /Proven: /, command);
 });
 
-test('edit tools may write only inside the project: outside the root is denied, also through a symlink', () => {
+test('edit tools may write only inside the app folder: outside it is denied, also through a symlink', () => {
   const base = realpathSync(mkdtempSync(join(tmpdir(), 'proven-guard-root-')));
   const project = join(base, 'project');
   const outside = join(base, 'outside');
   mkdirSync(join(project, 'site'), { recursive: true });
   mkdirSync(outside);
+  mkdirSync(join(project, '.proven'), { recursive: true });
+  writeFileSync(join(project, '.proven', 'config.json'), JSON.stringify({ app: 'site' }));
   symlinkSync(outside, join(project, 'site', 'link'));
   const edit = (tool, input, cwd = project) => decide({ tool_name: tool, tool_input: input, cwd }, { projectDir: project });
   for (const [tool, key] of [['Write', 'file_path'], ['Edit', 'file_path'], ['MultiEdit', 'file_path'], ['NotebookEdit', 'notebook_path']]) {
     assert.equal(edit(tool, { [key]: join(project, 'site', 'a.html') }), null, `${tool} inside the app`);
     for (const target of [join(base, 'x.txt'), '../x.txt', '../../etc/x', '/etc/hosts', join(outside, 'x'), 'site/link/x', join(project, 'site', 'link', 'x'), 'site/link']) {
-      assert.match(edit(tool, { [key]: target }) ?? '', /outside the project/, `${tool} ${target}`);
+      assert.match(edit(tool, { [key]: target }) ?? '', /outside the app folder/, `${tool} ${target}`);
     }
   }
   const home = join(base, 'home');
-  assert.match(edit('Edit', { file_path: join(home, '.gitconfig') }) ?? '', /outside the project/);
-  assert.match(edit('Edit', { file_path: join(home, '.config', 'git', 'config') }) ?? '', /outside the project/);
+  assert.match(edit('Edit', { file_path: join(home, '.gitconfig') }) ?? '', /outside the app folder/);
+  assert.match(edit('Edit', { file_path: join(home, '.config', 'git', 'config') }) ?? '', /outside the app folder/);
   assert.match(edit('Write', {}) ?? '', /Proven: /, 'no path at all is denied too');
   assert.match(edit('Write', { file_path: '' }) ?? '', /Proven: /);
   // protected paths inside the project stay protected

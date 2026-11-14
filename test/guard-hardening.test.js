@@ -16,15 +16,17 @@ function project(t) {
   const dir = join(base, 'project');
   mkdirSync(join(dir, 'tickets'), { recursive: true });
   mkdirSync(join(dir, 'site'), { recursive: true });
+  mkdirSync(join(dir, '.proven'), { recursive: true });
+  writeFileSync(join(dir, '.proven', 'config.json'), JSON.stringify({ app: 'site' }));
   return dir;
 }
 const run = (dir, input) => spawnSync(process.execPath, [HOOK], { input, encoding: 'utf8', env: { ...process.env, CLAUDE_PROJECT_DIR: dir } });
 
 test('the guard also protects .testmuai, .mcp.json and CLAUDE.md', (t) => {
   const dir = project(t);
-  for (const name of ['.testmuai', '.mcp.json', 'claude.md']) assert.ok(PROTECTED.includes(name), name);
+  for (const name of ['.testmuai', '.mcp.json', 'claude.md', '.gitattributes', '.gitmodules']) assert.ok(PROTECTED.includes(name), name);
   const call = (tool_name, tool_input) => decide({ tool_name, tool_input, cwd: dir }, { projectDir: dir });
-  for (const file of ['.testmuai/evidence/x', '.mcp.json', 'CLAUDE.md', 'claude.md', 'Claude.md']) {
+  for (const file of ['.testmuai/evidence/x', '.mcp.json', 'CLAUDE.md', 'claude.md', 'Claude.md', '.gitattributes', '.gitmodules']) {
     assert.match(call('Write', { file_path: join(dir, file), content: 'x' }) ?? '', /which the agent does not change/, file);
     assert.match(call('Bash', { command: `echo x > ${file}` }) ?? '', /Proven: /, file);
   }
@@ -95,4 +97,68 @@ test('a symlink with another name that leads into a protected folder is caught b
   assert.match(call('Edit', { file_path: 'site/alias/T-1.md' }) ?? '', /under tickets\//);
   assert.match(call('Edit', { file_path: join(dir, 'site', 'alias', 'new.md') }) ?? '', /under tickets\//);
   assert.match(call('mcp__x__y', { path: 'site/alias/T-1.md' }) ?? '', /Proven: /);
+});
+
+test('edits are deny-by-default: only inside the app folder named in .proven/config.json', (t) => {
+  const dir = project(t);
+  mkdirSync(join(dir, 'sitemap'));
+  writeFileSync(join(dir, 'notes.txt'), 'root file');
+  symlinkSync(join(dir, 'notes.txt'), join(dir, 'site', 'to-root'));
+  const edit = (tool, input) => decide({ tool_name: tool, tool_input: input, cwd: dir }, { projectDir: dir });
+  for (const [tool, key] of [['Write', 'file_path'], ['Edit', 'file_path'], ['MultiEdit', 'file_path'], ['NotebookEdit', 'notebook_path']]) {
+    for (const ok of ['site/a.html', join(dir, 'site', 'deep', 'er', 'b.css'), 'site/./c.js']) assert.equal(edit(tool, { [key]: ok }), null, `${tool} ${ok}`);
+    for (const bad of ['notes.txt', 'newfile.js', 'sitemap/x.html', 'site/../notes.txt', join(dir, 'x'), 'site', 'site/to-root', '.']) {
+      assert.match(edit(tool, { [key]: bad }) ?? '', /outside the app folder site\//, `${tool} ${bad}`);
+    }
+  }
+});
+
+test('edits fail closed when the app folder cannot be read from the config', (t) => {
+  const dir = project(t);
+  const edit = (file) => decide({ tool_name: 'Write', tool_input: { file_path: file }, cwd: dir }, { projectDir: dir });
+  const config = join(dir, '.proven', 'config.json');
+  for (const text of ['not json', '{"app": 7}', '{"app": "../x"}', '{"app": "/etc"}', '{"app": ""}', '{"app": "."}', '[]']) {
+    writeFileSync(config, text);
+    assert.match(edit('site/a.html') ?? '', /Proven: .*app folder .*config\.json/, text);
+  }
+  rmSync(config);
+  assert.equal(edit('demo/app/a.html'), null, 'no config at all means the default demo/app');
+  assert.match(edit('site/a.html') ?? '', /outside the app folder demo\/app\//);
+});
+
+test('MCP: percent-encoded file URLs, object keys, over-long strings and over-deep objects fail closed', (t) => {
+  const dir = project(t);
+  const call = (tool_input) => decide({ tool_name: 'mcp__files__write_file', tool_input, cwd: dir }, { projectDir: dir });
+  const url = (rel) => `file://${dir}/${rel}`;
+  for (const input of [
+    { uri: url('%2Etestmuai/evidence/x') },
+    { uri: url('.proven/state/T-1.json').replace('.proven', '%2eproven') },
+    { uri: url('site/%2e%2e/tickets/T-1.md') },
+    { uri: url('site/%252e%252e/tickets/T-1.md') },
+    { uri: `FILE:///${dir.slice(1)}/tickets/x` },
+    { uri: `file://localhost${dir}/tickets/x` },
+    { path: 'site/%2e%2e/tickets/T-1.md' },
+    { path: encodeURIComponent('tickets/T-1.md') },
+  ]) assert.match(call(input) ?? '', /Proven: /, JSON.stringify(input));
+  assert.match(call({ uri: 'file:///%E0%A4%A' }) ?? '', /could not be read/);
+  assert.match(call({ path: '%E0%A4%A/x' }) ?? '', /could not be read/);
+  assert.match(call({ 'tickets/T-1.md': 'x' }) ?? '', /Proven: .*protected/);
+  assert.match(call({ nested: { 'receipts/T-1.json': 1 } }) ?? '', /Proven: .*protected/);
+  let deep = { path: 'site/a.html' };
+  for (let i = 0; i < 40; i++) deep = { x: deep };
+  assert.match(call(deep) ?? '', /nested too deeply to check/);
+  assert.match(call({ blob: 'x'.repeat(5000) }) ?? '', /too long to check/);
+  assert.match(call({ blob: `${'x'.repeat(5000)} tickets/T-1.md` }) ?? '', /too long to check/);
+  assert.match(call({ many: Array.from({ length: 5000 }, () => 'a') }) ?? '', /too many values to check/);
+});
+
+test('MCP: a path-like argument must point inside the app folder, other text passes', (t) => {
+  const dir = project(t);
+  const call = (tool_input) => decide({ tool_name: 'mcp__files__write_file', tool_input, cwd: dir }, { projectDir: dir });
+  for (const input of [{ path: '/etc/passwd' }, { path: '../x' }, { path: '~/.gitconfig' }, { path: 'notes/x.txt' }, { path: join(dir, 'x.js') }, { path: 'site/../x' }, { path: 'C:\\Users\\x' }, { path: './notes.txt/x' }]) {
+    assert.match(call(input) ?? '', /Proven: .*outside the app folder/, JSON.stringify(input));
+  }
+  for (const input of [{ path: 'site/a.html' }, { path: join(dir, 'site', 'b.css') }, { text: 'hello world' }, { text: 'a sentence with a / slash in it' }, { url: 'https://example.com/a/b?c=d' }, { name: 'notes.txt' }, { n: 5 }]) {
+    assert.equal(call(input), null, JSON.stringify(input));
+  }
 });
