@@ -149,7 +149,7 @@ export function classifyRun({ events, exitCode, timedOut, interrupted, spawnErro
     );
   }
   if (interrupted) return notRun('the run was interrupted');
-  if (timedOut) return notRun(`Kane did not finish within ${timeoutS} s`);
+  if (timedOut) return notRun(`Kane did not finish within ${timeoutS} s`, { timedOut: true, stepEnds: [...facts.ends] });
   if (exitCode === 2) return notRun(`Kane did not start (exit code 2)${facts.lastMessage ? `: ${facts.lastMessage}` : ''}`);
   if (exitCode === 3) return notRun('Kane timed out or was cancelled (exit code 3)');
   if (exitCode !== 0 && exitCode !== 1) return notRun(`Kane stopped with exit code ${exitCode}`);

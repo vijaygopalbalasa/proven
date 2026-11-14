@@ -39,7 +39,7 @@ export async function replayReceipt(ctx, receipt) {
   const { root, out } = ctx;
   const id = receipt.ticket;
   const p = ticketPaths(id);
-  const skip = (reason) => ({ lines: [{ status: 'skip', text: `replay skipped: ${reason}` }], agreed: null });
+  const skip = (reason) => ({ lines: [{ status: 'skip', text: `replay skipped: ${reason}` }], agreed: null, note: `The replay did not start (${String(reason).replace(/\.+$/, '')}), so only the git checks ran.` });
 
   const frozen = fileAt(root, receipt.frozen.commit, p.test);
   if (!frozen || sha256(frozen) !== receipt.frozen.test_sha256) return skip(`the frozen test is not in ${short(receipt.frozen.commit)}`);
@@ -56,6 +56,10 @@ export async function replayReceipt(ctx, receipt) {
   const kane = kaneCommand();
   announceKane(out, kane);
   out.say('Replay runs Kane twice (red, then green), so it costs about twice a red run.');
+  // A replay is two runs and decides no ticket's state, so it gets twice the limit pinned at freeze. Red, done and recheck
+  // keep the pinned limit.
+  const replayLimit = timeoutS * 2;
+  out.say(`Replay limit ${replayLimit} s (twice the ${timeoutS} s pinned at freeze)`);
   const lines = [];
   const sides = [
     { side: 'red', commit: receipt.red.commit, tree: receipt.red.app_tree, expected: { outcome: 'failed', failedStep: receipt.red.failed_step } },
@@ -71,16 +75,29 @@ export async function replayReceipt(ctx, receipt) {
       startUrl,
       kane,
       tree: s.tree,
-      timeoutS,
+      timeoutS: replayLimit,
       what: `the app at ${s.side} ${short(s.commit)}`,
     });
     const agrees = replayAgrees(s.expected, verdict);
     if (agrees === null) {
       const why = verdict.hint ? `${verdict.reason}. Kane said: ${verdict.hint}` : verdict.reason;
-      // Without a red replay there is nothing to compare green against, so the replay stops there.
-      if (s.side === 'red') return { lines: [...lines, { status: 'skip', text: `replay skipped: ${why}` }], agreed: null };
+      const plain = (x) => String(x).replace(/\.+$/, '');
+      if (s.side === 'red') {
+        // Without a red replay there is nothing to compare green against, so the replay stops there. Say what Kane did.
+        const failedAtRecorded = verdict.timedOut && (verdict.stepEnds ?? []).some(([i, st]) => i === receipt.red.failed_step && st === 'failed');
+        const note = failedAtRecorded
+          ? `Kane failed step ${receipt.red.failed_step} at red, as the receipt records, but ran past the replay limit of ${replayLimit} s, so the green run was not started.`
+          : verdict.timedOut
+            ? `Kane ran past the replay limit of ${replayLimit} s at red before the test finished${(verdict.stepEnds ?? []).length ? '' : ' (it had not finished any step)'}, so the replay did not complete and green was not started.`
+            : `Kane did not run at red: ${plain(why)}.`;
+        return { lines: [...lines, { status: 'skip', text: `replay skipped: ${why}` }], agreed: null, note };
+      }
       lines.push({ status: 'skip', text: `replay skipped at green ${short(s.commit)}: ${why}` });
-      return { lines, agreed: agreed ? null : false };
+      const redLine = `Kane failed step ${receipt.red.failed_step} at red, as the receipt records`;
+      const note = verdict.timedOut
+        ? `${redLine}, but ran past the replay limit of ${replayLimit} s at green without finishing, so green was not confirmed.`
+        : `${redLine}, but the green run did not complete (${plain(why)}), so green was not confirmed.`;
+      return { lines, agreed: agreed ? null : false, note };
     }
     const words = verdict.outcome === 'failed' ? kaneWords(verdict) : null;
     lines.push({

@@ -62,16 +62,17 @@ test('verify --replay: when Kane does not run, the replay is skipped and the git
   const repo = await greenRepo(t);
   const calls = repo.kaneCalls().length;
   let r = await repo.run(['verify', RECEIPT, '--replay'], { scenario: 'not-started' });
-  assert.equal(r.code, 0, r.stdout);
-  assert.match(r.stdout, /^CONFIRMED receipts\/T-1\.json/m);
+  assert.equal(r.code, 2, r.stdout);
+  assert.match(r.stdout, /^CONFIRMED \(git checks only\) receipts\/T-1\.json/m);
   assert.deepEqual(lines(r.stdout, 'skip'), [
     'replay skipped: Kane did not start (exit code 2). Kane said: Not signed in. Run kane-cli login first.',
   ]);
-  assert.match(r.stdout, /^Kane did not run again, so the git checks stand\.$/m);
+  assert.match(r.stdout, /^Kane did not run at red: Kane did not start \(exit code 2\)\. Kane said: Not signed in\. Run kane-cli login first\.$/m);
+  assert.doesNotMatch(r.stdout, /Kane did not run again/);
   assert.equal(repo.kaneCalls().length, calls + 1, 'green is not tried when red did not run');
 
   r = await repo.run(['verify', RECEIPT, '--replay'], { scenario: ['red', 'not-started'] });
-  assert.equal(r.code, 0, r.stdout);
+  assert.equal(r.code, 2, r.stdout);
   assert.equal(lines(r.stdout, 'ok').at(-1).startsWith('replay at red '), true);
   assert.match(lines(r.stdout, 'skip')[0], /^replay skipped at green [0-9a-f]{7}: Kane did not start \(exit code 2\)/);
 });
@@ -91,12 +92,12 @@ test('verify --replay: skipped when the git checks fail, when the port is taken,
   await new Promise((done) => other.listen(Number(new URL(repo.url).port), '127.0.0.1', done));
   r = await repo.run(['verify', RECEIPT, '--replay'], { scenario: ['red', 'green'] });
   await new Promise((done) => other.close(done));
-  assert.equal(r.code, 0);
+  assert.equal(r.code, 2);
   assert.match(lines(r.stdout, 'skip')[0], /^replay skipped: Port \d+ is already in use\. Stop the other server/);
 
   repo.write('tickets/T-1_test.md', repo.read('tickets/T-1_test.md').replace('$27.50', '$30.00'));
   r = await repo.run(['verify', RECEIPT, '--replay'], { scenario: ['red', 'green'] });
-  assert.equal(r.code, 0);
+  assert.equal(r.code, 2);
   assert.match(lines(r.stdout, 'skip')[0], /^replay skipped: tickets\/T-1_test\.md here is not the frozen test\. Restore it with: git checkout [0-9a-f]{7} -- tickets\/T-1_test\.md$/);
   assert.equal(repo.kaneCalls().length, calls, 'Kane never ran');
 });

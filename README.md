@@ -60,7 +60,7 @@ Six of Kane CLI's own step screenshots, cropped to the page. The first row is th
 
 1. **See it (30 seconds).** `npm start` shows the board over the receipts committed here. Each card's receipt is re-checked with git when the board loads. No install, no login.
 2. **Replay a receipt.** The cheapest live check is under "Try it" above.
-3. **Run the tests.** `npm test` runs 171 tests, every command end to end, on a fake Kane (no login). It takes about 3 to 4 minutes, longer on a busy machine.
+3. **Run the tests.** `npm test` runs 177 tests, every command end to end, on a fake Kane (no login). It takes about 3 to 4 minutes, longer on a busy machine.
 4. **See Kane fail a test yourself, then run the whole loop.** Both start on the branch `try-it`, where T-3 of the demo shop is written but not frozen. About 30 credits and 1 minute for the red, about 225 to 280 credits and 15 minutes for everything.
 5. **If you can't run Kane.** The receipts and state of the recorded run are committed, `verify` works offline, and [docs/recorded-run.md](docs/recorded-run.md) has the terminal output of the run line by line.
 6. **Dates.** The first commit is `68295c6`, at 2026-11-13 02:20 IST (Nov 12 20:50 UTC). The history is as written.
@@ -143,7 +143,9 @@ Run `npm link` once to call Proven as `proven`. The commands below use `node bin
 - **Verify.** `proven verify receipts/T-N.json` checks the receipt's own hash, that the frozen test matches, that the
   lock was written once right after it, that red is an ancestor of green, that the test did not change in between,
   that the app trees match and changed, and that the state history shows this red. With `--replay`, Kane runs the
-  frozen test fresh at the red commit (must fail at the recorded step) and at the green commit (must pass).
+  frozen test fresh at the red commit (must fail at the recorded step) and at the green commit (must pass). A replay
+  gets twice the time limit pinned at freeze. If it does not complete, for example because Kane runs past that limit after
+  the red step, the headline reads `CONFIRMED (git checks only)`, the last line says what Kane did, and the exit code is 2.
 - **Recheck and reopen.** `proven recheck` runs every done ticket's frozen test again against the app as committed now,
   with `--no-adaptive-heal`. A failure is confirmed by a second fresh run before anything changes. Only a confirmed
   failure reopens the ticket, in a state commit of its own, and the new receipt links the earlier one.
@@ -207,7 +209,7 @@ Each Kane run prints the credits it used. `proven verify --replay` is two Kane r
   ```
 - "The agent can start" in `proven red`'s output means `proven loop` can now run. Nothing starts the agent until you run it, and `proven done` works the same if you make the change yourself.
 - Writing a criterion Kane can check: name the exact labels the feature will have (a button's text, a heading), check the lasting state of the page rather than a message that disappears, keep to one action per step, and leave step 1 to Proven (it checks your landmark text). Then read Kane's words at red before you run the loop, because a red can fail for a different reason than the one you meant. The ticket template says the same.
-- For a longer test, raise `timeout_s` in `.proven/config.json` before you freeze. The lock pins it, and replays use the same limit. Kane runs are cut off at 300 s by default, and both TodoMVC cases had one run cut off.
+- For a longer test, raise `timeout_s` in `.proven/config.json` before you freeze. The lock pins it, and a replay gets twice that limit. Kane runs are cut off at 300 s by default, and both TodoMVC cases had one run cut off.
 - Times on TodoMVC: `red` about 2.5 minutes (its step 2 alone took 107 s in one run), `proven loop` about 5 minutes.
 
 What works, and what does not:
@@ -236,7 +238,7 @@ What works, and what does not:
 | `proven loop [T-N ...]` | person | hands each red or reopened ticket to the coding agent, shows the agent and Kane live, rechecks, hands back what reopens (at most 2 rounds) |
 | `proven init` | person | the Claude Code guard rails |
 
-Exit codes for `red` and `done`: 0 ok, 1 Kane failed (or, at red, the test already passes), 2 did not run. For
+Exit codes for `verify`: 0 confirmed (with `--replay`, Kane agreed), 1 mismatch, 2 `--replay` was asked for but did not complete (only the git checks ran). Exit codes for `red` and `done`: 0 ok, 1 Kane failed (or, at red, the test already passes), 2 did not run. For
 `recheck`: 0 all still pass, 1 a ticket reopened, 2 something did not run. For `loop`: 0 all done and the last recheck passes, 1 needs
 a person, agent stopped without a green or a reopen at the end, 2 something did not run.
 
@@ -259,4 +261,4 @@ a person, agent stopped without a green or a reopen at the end, 2 something did 
 
 `tickets/` holds tickets, frozen tests and locks. `receipts/` holds receipts. `.proven/state/` holds each ticket's red
 record and attempts. `.proven/config.json` holds the app folder, the time limit and the attempt limit, which are
-pinned when a ticket is frozen. For a longer test, raise `timeout_s` in `.proven/config.json` before you freeze. The lock pins it, and replays use the same limit. How a run counts, and what I measured about Kane: [docs/kane-facts.md](docs/kane-facts.md).
+pinned when a ticket is frozen. For a longer test, raise `timeout_s` in `.proven/config.json` before you freeze. The lock pins it, and a replay gets twice that limit. How a run counts, and what I measured about Kane: [docs/kane-facts.md](docs/kane-facts.md).

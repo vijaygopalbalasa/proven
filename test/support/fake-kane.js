@@ -28,6 +28,8 @@ const SCENARIOS = {
   'green-changes-app': { fixture: 'green', exit: 0, touch: true },
   'red-leaky': { fixture: 'red', exit: 1, leaky: true },
   hang: { hang: true },
+  // Plays the red run up to the end of step 2 (which fails), then hangs, like a run cut off by the time limit.
+  'red-cut': { fixture: 'red', exit: 1, cutAfterStep: 2 },
 };
 
 // Flags after the test path that Kane CLI 0.10.4 has for testmd run: Proven may add only these.
@@ -160,6 +162,9 @@ async function fetchPages() {
 
 const out = (event) => process.stdout.write(JSON.stringify(event) + '\n');
 
+// FAKE_KANE_DELAY_MS: Kane is slow to start, for the tests of the time limits.
+if (process.env.FAKE_KANE_DELAY_MS) await new Promise((done) => setTimeout(done, Number(process.env.FAKE_KANE_DELAY_MS)));
+
 if (scenario.hang) {
   log();
   out({ type: 'stream_start', cli_version: '0.10.4', surface: 'testmd', pid: process.pid, v: 1 });
@@ -223,6 +228,10 @@ function play() {
       wroteRecording = true;
     }
     out(e);
+    if (scenario.cutAfterStep && e.type === 'test_md_step_end' && e.step_index === scenario.cutAfterStep) {
+      setInterval(() => {}, 1000);
+      return;
+    }
     if (scenario.touch && !touched && e.type === 'test_md_step_end' && process.env.FAKE_KANE_TOUCH) {
       writeFileSync(process.env.FAKE_KANE_TOUCH, 'changed while Kane ran\n');
       touched = true;

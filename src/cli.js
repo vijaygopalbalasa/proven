@@ -31,6 +31,8 @@ export const USAGE = `proven: a ticket closes only when Kane CLI saw it fail bef
 Kane is always kane-cli from PATH. Settings live in .proven/config.json (app, timeout_s, max_attempts)
 and are pinned when a ticket is frozen.
 Exit codes for red and done: 0 ok, 1 Kane failed (or already passes at red), 2 did not run.
+Exit codes for verify: 0 confirmed (with --replay, Kane agreed), 1 mismatch, 2 --replay was asked for but did not complete
+(only the git checks ran).
 Exit codes for recheck: 0 all still pass, 1 a ticket reopened, 2 something did not run.
 Exit codes for loop: 0 all done and the last recheck passes, 1 a ticket needs a person, the agent stopped without a green
 or the last recheck reopened one, 2 something did not run. The agent command is in .proven/agent.json (optional); loop runs it only with --agent-config.`;
