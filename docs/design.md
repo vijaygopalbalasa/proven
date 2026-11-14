@@ -165,9 +165,12 @@ in the working tree differs (Kane runs on that path), and runs Kane on it twice,
 so Kane authors every step from the test's text): first with the tree at red (`red.app_tree`) served on the start
 URL's port, where Kane must fail at the recorded step, then with the tree at green, where Kane must pass. A fresh clone
 behaves the same, and Kane's adaptive heal (up to 3 re-authoring attempts on a replay miss, then a full re-author)
-cannot run into the time limit. A side that disagrees makes the result MISMATCH. When Kane does not run, the line says "replay skipped" with the reason
-and the git result stands; without a red replay there is nothing to compare, so green is not tried. A replay writes
-nothing to git.
+cannot run into the time limit. Each replay run gets twice the time limit pinned at freeze, because a replay is two
+runs and decides no ticket's state; red, done and recheck keep the pinned limit. A side that disagrees makes the
+result MISMATCH. When the replay does not complete (Kane signed out, no network, a run past the limit), the line says
+"replay skipped" with the reason, the headline reads `CONFIRMED (git checks only)`, the last line says what Kane did,
+and verify exits 2. Without a red replay there is nothing to compare, so green is not tried. A replay writes nothing
+to git.
 
 ## Recheck and reopen (5)
 

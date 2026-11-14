@@ -98,7 +98,8 @@ author.
    MISMATCH with each failed check and exit 1.
 3. WHEN `--replay` is given and Kane CLI is signed in THE SYSTEM SHALL serve the app as it was at the red commit and
    check that Kane fails the frozen test there for the recorded step, then serve it as it was at the green commit and
-   check that Kane passes, and report both verdicts. This re-checks the red itself, not only the green.
+   check that Kane passes, and report both verdicts. This re-checks the red itself, not only the green. IF the replay
+   does not complete THEN THE SYSTEM SHALL say so in the headline (`CONFIRMED (git checks only)`) and exit 2.
 
 ## Requirement 5: Reopen on regression
 **User story:** As a person, I want a closed ticket to reopen when later work breaks it, so that done stays done.
