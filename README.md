@@ -129,7 +129,7 @@ git and file hashes first. Details, the agent command, using an agent other than
 
 ## The guard
 
-`proven init` writes a Claude Code hook. The agent can read files, edit the app with its edit tools and run `node bin/proven.js done T-N`. The hook blocks writes to tickets, receipts, `.proven/`, `.git/`, `.testmuai/`, `.mcp.json`, `CLAUDE.md` and Proven's own code. It blocks every Bash command that is not on a short read-only allowlist, and any MCP tool call with an argument that points into one of those paths. If it cannot read a tool call, or fails, it blocks the call. It is not a sandbox. Details: [docs/guard.md](docs/guard.md).
+`proven init` writes a Claude Code hook. The agent can read files, run `node bin/proven.js done T-N`, and edit files only inside the app folder named in `.proven/config.json`: the edit tools are blocked everywhere else. Bash is blocked unless every command is `proven done` or on a short read-only allowlist. An MCP tool call is blocked if it names a protected path (`tickets`, `receipts`, `.proven`, `.git`, `.testmuai`, `.mcp.json`, `CLAUDE.md`, Proven's own code), if a path-like argument points outside the app folder, or if the guard cannot check every argument. If it cannot read a tool call, or fails, it blocks the call. It is not a sandbox. Details: [docs/guard.md](docs/guard.md).
 
 ## Use it on your own static app
 
@@ -164,7 +164,7 @@ What works, and what does not:
 
 - **Static files only.** Proven serves the app folder itself while Kane runs. There is no build step and no server of
   your own.
-- **The app folder** must be inside the repository and not `tickets`, `receipts`, `.proven`, `.git`, `.claude`, `.testmuai`, `.mcp.json`, `CLAUDE.md`, `src`,
+- **The app folder** must be inside the repository and not `tickets`, `receipts`, `.proven`, `.git`, `.claude`, `.testmuai`, `.mcp.json`, `.gitattributes`, `.gitmodules`, `CLAUDE.md`, `src`,
   `bin`, `test`, `docs`, `node_modules`, `package.json`, `package-lock.json`, `README.md` or `.gitignore`: the guard keeps
   the agent out of those, so Proven refuses such a config. Use a folder like `site/` or `public/`.
 - **The agent can edit only the app folder.** It cannot touch your tests, docs or config.

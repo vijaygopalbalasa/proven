@@ -386,7 +386,8 @@ test('guard: .git is protected, so the agent cannot change config, hooks or refs
   }
   assert.equal(call('Bash', { command: 'git log --oneline' }), null);
   assert.equal(call('Bash', { command: 'git status' }), null);
-  assert.equal(call('Write', { file_path: join(dir, '.gitignore-not-really', 'x'), content: 'x' }), null);
+  assert.match(call('Write', { file_path: join(dir, '.gitignore-not-really', 'x'), content: 'x' }) ?? '', /outside the app folder demo\/app\//, 'not protected by name, but outside the app folder');
+  assert.equal(call('Write', { file_path: join(dir, 'demo', 'app', 'x.html'), content: 'x' }), null);
 });
 
 for (const [mode, what, re] of [
