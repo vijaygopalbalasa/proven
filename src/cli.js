@@ -1,3 +1,4 @@
+import { fstatSync } from 'node:fs';
 import { Refusal } from './errors.js';
 import { loadConfig } from './config.js';
 import { findRoot, pinGitDir, readIdentity } from './git.js';
@@ -55,11 +56,23 @@ export function parseArgs(argv) {
   return { positional, flags };
 }
 
+// Are the two streams the same file or pipe (2>&1, or both sent to one file)? Then a line printed on both would show twice.
+function sameFile(a, b) {
+  try {
+    if (typeof a.fd !== 'number' || typeof b.fd !== 'number') return false;
+    const x = fstatSync(a.fd);
+    const y = fstatSync(b.fd);
+    return x.dev === y.dev && x.ino === y.ino && x.ino !== 0;
+  } catch {
+    return false;
+  }
+}
+
 export function makeOut({ stdout = process.stdout, stderr = process.stderr } = {}) {
   const line = (stream, s) => stream.write(String(s).endsWith('\n') ? String(s) : String(s) + '\n');
   // Verdicts go to stdout and stderr, so an agent or hook that reads only one still sees them.
   // When both streams are the same terminal, a person would see it twice, so it is printed once.
-  const sameTerminal = Boolean(stdout.isTTY && stderr.isTTY);
+  const sameTerminal = Boolean((stdout.isTTY && stderr.isTTY) || sameFile(stdout, stderr));
   return {
     say: (s) => line(stdout, s),
     warn: (s) => line(stderr, s),

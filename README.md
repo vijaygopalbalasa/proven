@@ -42,7 +42,7 @@ Three of Kane CLI's own step screenshots, cropped to the cart (the demo shop is 
 
 1. **See it (30 seconds).** `npm start` shows the board over the receipts committed here. Each card's receipt is re-checked with git when the board loads. No install, no login.
 2. **Cheapest live check: replay a receipt.** `node bin/proven.js verify receipts/T-1.json --replay` needs Kane CLI and `kane-cli login`. It checks the receipt with git, then has Kane run the frozen test again with the app at red (it must fail) and at green (it must pass). I measured it on Nov 14: about 29 Kane credits (11 for the red run, 18 for the green run) and 2.5 to 3.5 minutes, depending on how busy the machine was. Port 8091 must be free.
-3. **Run the tests.** `npm test` runs 161 tests, every command end to end, on a fake Kane (no login). It takes about 3 to 4 minutes, longer on a busy machine.
+3. **Run the tests.** `npm test` runs 171 tests, every command end to end, on a fake Kane (no login). It takes about 3 to 4 minutes, longer on a busy machine.
 4. **See Kane fail a test yourself (about 30 credits, about 1 minute).** Needs Kane CLI and `kane-cli login`. On the branch `try-it`, T-3 is written but not frozen:
    ```
    git checkout try-it
@@ -137,17 +137,35 @@ Two real runs on someone else's app are in [docs/own-app.md](docs/own-app.md): t
 with real Kane and Claude Code. Kane failed a new "Clear completed (2)" test on it, Claude Code made the one-line fix,
 Kane passed it, and `proven verify` printed CONFIRMED. What those runs show:
 
+Install Proven first. Pick one:
+
 ```
-npm link                                    # run once, from your clone of Proven (Node 22 or newer): the agent calls plain `proven`
+npx github:vijaygopalbalasa/proven --help          # no install: put this in front of every command below instead of `proven`
+npm i -g github:vijaygopalbalasa/proven            # puts `proven` on your PATH, which `proven loop` needs for the agent
+git clone https://github.com/vijaygopalbalasa/proven && cd proven && npm link    # from a clone (Node 22 or newer)
+```
+
+In a test on Nov 14, `npx` took 7 seconds cold and the global install took 4 seconds. Then, in your own repository:
+
+```
 cd your-repo                                # a git repository with a static app in a folder, for example site/
 mkdir -p .proven && echo '{ "app": "site" }' > .proven/config.json
 proven init                                 # writes into your repo: the guard hook (.claude/), CLAUDE.md and .gitignore lines
-git add -A && git commit -m "Add Proven"    # commit them before proven new
+git add -A && git commit -m "Add Proven"    # freeze refuses until these are committed
 proven new T-1 "Your feature" --url http://localhost:8095/ --landmark "text on the page"
-# fill in tickets/T-1.md: plain steps, each criterion ending in a Verify line (example below)
+# fill in tickets/T-1.md: plain steps, each criterion ending in a Verify line (see below)
 proven freeze T-1 && proven red T-1         # Kane must fail it on your app as it is
-proven loop                                 # after red, this is what starts the agent: it fixes the app, Kane passes it, a receipt is written
 ```
+
+Then pick one:
+
+```
+proven loop                                 # Claude Code fixes the app, Kane passes it, a receipt is written
+# or, by hand: change the app yourself, then
+proven done T-1                             # Kane runs the frozen test on your change and writes the receipt if it passes
+```
+
+Each Kane run prints the credits it used. `proven verify --replay` is two Kane runs, so it costs about twice a `red`.
 
 - `--url`: any free local port works. Proven serves your app folder there while Kane runs, and the page must show the
   landmark text.
@@ -157,7 +175,8 @@ proven loop                                 # after red, this is what starts the
   Type Buy milk in the What needs to be done field and press Enter. Do the same for Walk dog and for Pay rent. Click the round checkbox next to Buy milk and the one next to Walk dog.
   Verify the button at the bottom right of the list reads Clear completed (2).
   ```
-- "The agent can start" in `proven red`'s output means `proven loop` can now run. Nothing starts the agent until you run it.
+- "The agent can start" in `proven red`'s output means `proven loop` can now run. Nothing starts the agent until you run it, and `proven done` works the same if you make the change yourself.
+- Writing a criterion Kane can check: name the exact labels the feature will have (a button's text, a heading), check the lasting state of the page rather than a message that disappears, and leave step 1 to Proven (it checks your landmark text). The ticket template says the same.
 - Times on TodoMVC: `red` about 2.5 minutes (its step 2 alone took 107 s in one run), `proven loop` about 5 minutes.
 
 What works, and what does not:

@@ -189,6 +189,7 @@ export async function runKaneOnTree(ctx, { id, label, steps, startUrl, kane, tre
     const pack = findPack(root, p.test, verdict);
     verdict.packFile = pack;
     verdict.evidenceSha256 = pack ? fileSha256(pack) : null;
+    if (verdict.outcome !== 'did-not-run' && verdict.credits > 0) ctx.out.say(`Kane used ${verdict.credits} credits on this run.`);
     return verdict;
   } finally {
     clearActive();

@@ -55,6 +55,7 @@ export async function replayReceipt(ctx, receipt) {
 
   const kane = kaneCommand();
   announceKane(out, kane);
+  out.say('Replay runs Kane twice (red, then green), so it costs about twice a red run.');
   const lines = [];
   const sides = [
     { side: 'red', commit: receipt.red.commit, tree: receipt.red.app_tree, expected: { outcome: 'failed', failedStep: receipt.red.failed_step } },

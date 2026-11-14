@@ -46,7 +46,10 @@ Landmark: ${landmark}
 
 <!--
 Add one ### block per criterion: a short title, then plain steps.
-End each criterion with a Verify line that Kane can check on screen. Example:
+End each criterion with a Verify line that Kane can check on screen.
+Name the exact labels the feature will show (a button's text, a heading).
+Check the lasting state of the page, not a message that disappears after a moment.
+Step 1, the landmark check, is added for you. Example:
 
 ### Apply SAVE10
 Type SAVE10 in the coupon field and click Apply.
