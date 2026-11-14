@@ -44,6 +44,20 @@ claude -p --model claude-sonnet-5-5 --permission-mode acceptEdits --allowedTools
 - The command is not in `.proven/config.json` and no lock pins it, so receipts verify as before.
 - If the agent program is not on PATH, the loop says "did not run" and exits 2.
 
+### Using another coding agent
+
+Only Claude Code has been tested. `.proven/agent.json` lets you name another command line agent, but I have not run any other one, so treat this as untested.
+
+```
+{ "command": ["my-agent", "--headless"] }
+```
+
+- `command` is a list of words: the program first, then its flags. Proven runs it directly, with no shell, in the repository folder, and adds the prompt as the last word. The prompt is the fixed text above, so the agent must take its task as its last argument.
+- The agent has to be able to run `proven done T-N` (or `node bin/proven.js done T-N` in this repo) and read what it prints. Exit 0 means Kane passed. Exit 1 means Kane failed and the agent should fix the app. Exit 2 means Kane did not run.
+- Add `"--output-format", "stream-json"` only if your agent really prints Claude Code's stream-json lines. Proven shows tool calls and "agent says" lines only from that format. With any other output it prints just the attempts it reads from its own state.
+- The guard hook is a Claude Code hook. With another agent it does not run, so nothing keeps that agent out of tests, receipts or Proven's own files while it works. The checks that `proven loop` runs after every session still apply, and `verify --replay` is unchanged.
+- Because the file comes from the repository, `proven loop` shows the command and refuses until you pass `--agent-config`. It also refuses any command with a flag that turns permission checks off.
+
 ## What it does not trust
 
 The loop does not trust a verdict made inside the agent's session. After every session it checks git and file hashes,

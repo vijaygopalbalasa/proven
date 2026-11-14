@@ -1,6 +1,6 @@
 # Proven on someone else's app: TodoMVC
 
-This is a real run of Proven on an app we did not write: the vanilla JavaScript TodoMVC example
+This is a real run of Proven on an app I did not write: the vanilla JavaScript TodoMVC example
 (`examples/javascript-es5/dist` from github.com/tastejs/todomvc, MIT license). It ran on Nov 13 with real Kane CLI 0.10.4
 and real Claude Code, from Proven at `de49287`. **The run lives in a scratch git repository, not in this one.** Nothing
 from it is committed here except this text. The TodoMVC files were copied in as data: they were served, and never built,
@@ -104,9 +104,9 @@ About 88 Kane credits in all: red 43.63 and the green run 21.76 (both recorded i
 receipt), plus the loop's own fresh recheck, about 23 by the figures in its evidence pack. Red cost more here than in the
 demo shop (about 22 there): Kane's step took 84 s instead of 45 s.
 
-## Friction, and what we did about it
+## Friction, and what I did about it
 
-1. **The README had no own-app instructions.** It only described the demo. We added the section "Use it on your own
+1. **The README had no own-app instructions.** It only described the demo. I added the section "Use it on your own
    static app" to the README after this run.
 2. **Proven's own repo was assumed in the loop's prompts, the agent's allowed command and the config.** This is what
    the first part of this task fixed, before the run. The prompts now name the app folder (`todomvc`) and `proven done`
@@ -117,18 +117,18 @@ demo shop (about 22 there): Kane's step took 84 s instead of 45 s.
 3. **Git would have committed Kane's evidence.** The scratch repo had no `.gitignore`, and after the run `git status`
    showed `.testmuai/`, which holds evidence packs with the runner's name and email. One careless `git add -A` would
    publish them. `proven init` now adds `.testmuai/`, `tickets/output-*/`, `.proven/runs/` and `*.evidence` to
-   `.gitignore` (new, with a test). This run did not have that fix, so it did not add them; we did not commit them.
+   `.gitignore` (new, with a test). This run did not have that fix, so it did not add them; I did not commit them.
 4. **The guard blocked one of the agent's commands.** It tried `grep -n -i "clear" todomvc/*.js todomvc/index.html`. The
    unquoted `*` is not allowed, so the guard blocked it, and the agent read the files with its Read tool instead. That
    is the intended behaviour, but it is a wasted call, and a stranger will see it.
-5. **`proven init` reads the app folder from `.proven/config.json`,** so the config has to exist first (we wrote it first; `.proven/` does not exist in a fresh repo, so the command starts with `mkdir -p .proven`).
+5. **`proven init` reads the app folder from `.proven/config.json`,** so the config has to exist first (I wrote it first; `.proven/` does not exist in a fresh repo, so the command starts with `mkdir -p .proven`).
    If it is missing, `proven init` now says so and names the default app folder it used.
 6. **Doubled lines.** When `proven loop` writes both streams to one file, each result line appears twice. Cosmetic.
-   It only prints once to a terminal. We did not change it.
+   It only prints once to a terminal. I did not change it.
 7. **`proven init` still describes only the older guard** in its first line (tickets, receipts, `.proven`, `.claude`; new,
-   freeze, red). The guard itself is stricter than that line says. We did not change the text.
+   freeze, red). The guard itself is stricter than that line says. I did not change the text.
 8. **`proven verify ... | head -1` ends with a Node EPIPE stack trace** in a pipe that closes early. Cosmetic.
-   We did not change it.
+   I did not change it.
 
 ## A second run, from a fresh clone
 
@@ -140,7 +140,7 @@ this repository either.
 
 ## What the run shows, and what it does not
 
-Between them, the two runs show that a person who is not us can take a static app we did not write, point Proven at its folder, freeze a
+Between them, the two runs show that a person other than me can take a static app I did not write, point Proven at its folder, freeze a
 plain-English test, have Kane fail it, let Claude Code fix it and Kane pass it, and get a receipt that `proven verify`
 confirms. It does not show: apps that need a build step or a server (Proven only serves static files), an agent that
 needs more than one attempt, a recheck that reopens something, or any app other than this one.

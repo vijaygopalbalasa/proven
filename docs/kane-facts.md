@@ -1,4 +1,4 @@
-# How a run counts, and what we measured about Kane
+# How a run counts, and what I measured about Kane
 
 ## How a run counts
 
