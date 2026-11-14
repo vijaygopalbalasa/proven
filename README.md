@@ -13,7 +13,7 @@ handed back to the agent, with no person in between.
 
 ![The Proven board: three tickets, each with Kane's failure before the change and its pass after it](docs/images/board.png)
 
-Demo video: VIDEO_LINK_TODO
+Demo video (2:53): https://youtu.be/A4ITb2efKEk
 
 **Try it in 30 seconds, with no install and no login:**
 
