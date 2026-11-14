@@ -9,16 +9,16 @@
 // arguments points into those folders, whichever argument the command would write to. It is defence in depth, not a
 // sandbox: an agent with a shell can still get around it. That is why Proven shows a ticket as done only for a
 // receipt that verifies.
-import { existsSync, realpathSync } from 'node:fs';
-import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { existsSync, readFileSync, realpathSync } from 'node:fs';
+import { basename, dirname, isAbsolute, join, normalize, relative, resolve, sep } from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 // Tickets, receipts, Proven's state and these guard rails, and Proven's own code and files: the agent runs
 // proven done as the judge, so it must not be able to change the judge. Names are lowercase (compared without case).
 export const PROTECTED = [
   'tickets', 'receipts', '.proven', '.claude', '.git',
   'bin', 'src', 'package.json', 'package-lock.json', 'node_modules', 'test', 'docs', '.gitignore', 'readme.md',
-  '.testmuai', '.mcp.json', 'claude.md',
+  '.testmuai', '.mcp.json', 'claude.md', '.gitattributes', '.gitmodules',
 ];
 export const PERSON_STEPS = ['new', 'freeze', 'red', 'loop'];
 // Programs that run another program named later on the line.
@@ -48,6 +48,8 @@ const WHY = {
   '.git': 'Git config, hooks and refs decide what Proven trusts.',
   '.testmuai': "Kane's own files. Proven starts Kane itself, and nothing the agent writes there counts.",
   '.mcp.json': 'It decides which tool servers the agent can call.',
+  '.gitattributes': 'It changes how git reads files.',
+  '.gitmodules': 'It names other repositories git would fetch.',
   'claude.md': 'It holds the rules the agent is given.',
 };
 const OWN = 'That is part of Proven itself, which judges the ticket, so the agent does not change it.';
@@ -442,14 +444,41 @@ export function allowVerdict(command) {
   return null;
 }
 
-// The reason a path is not allowed for an edit tool, or null: it must name a file inside the project (symlinks resolved
-// where the file or its parent exists). An edit outside, such as ~/.gitconfig, could make an allowed git command run code.
-function outsideProject(path, { projectDir, cwd }) {
-  if (typeof path !== 'string' || !path.trim()) return 'has no file path';
-  const root = realish(resolve(projectDir));
+// The app folder named in .proven/config.json (default demo/app), as a clean relative path, or null when the config cannot
+// be read or names something that is not a folder inside the project. The agent may write only there.
+export function appFolder(projectDir) {
+  let app = 'demo/app';
+  const file = join(projectDir, '.proven', 'config.json');
+  if (existsSync(file)) {
+    try {
+      const config = JSON.parse(readFileSync(file, 'utf8'));
+      if (!config || typeof config !== 'object' || Array.isArray(config)) return null;
+      if (config.app !== undefined) app = config.app;
+    } catch {
+      return null;
+    }
+  }
+  if (typeof app !== 'string' || !app.trim()) return null;
+  const clean = normalize(app.trim()).replace(/\\/g, '/').replace(/\/+$/, '');
+  if (isAbsolute(clean) || clean === '.' || clean === '..' || clean.startsWith('../')) return null;
+  return clean;
+}
+
+const NO_APP = 'Proven: the app folder in .proven/config.json could not be read, so the guard blocked this call. The agent edits only the app folder.';
+
+// Is this path inside the app folder (symlinks resolved where the file or its parent exists)?
+function insideApp(path, { projectDir, cwd }, app) {
+  const appDir = realish(resolve(projectDir, app));
   const target = realish(resolve(cwd || projectDir, path.trim()));
-  const rel = relative(root, target);
-  if (rel.startsWith('..') || isAbsolute(rel)) return 'is outside the project';
+  const rel = relative(appDir, target);
+  return Boolean(rel) && !rel.startsWith('..') && !isAbsolute(rel);
+}
+
+// The reason a path is not allowed for an edit tool, or null: deny by default. It must name a file inside the app folder.
+// An edit anywhere else, such as ~/.gitconfig, could make an allowed git command run code.
+function outsideApp(path, where, app) {
+  if (typeof path !== 'string' || !path.trim()) return 'has no file path';
+  if (!insideApp(path, where, app)) return `is outside the app folder ${app}/`;
   return null;
 }
 
@@ -461,33 +490,99 @@ export function decide(input, { projectDir }) {
   const where = { projectDir, cwd: typeof input.cwd === 'string' ? input.cwd : projectDir };
   if (tool === 'Write' || tool === 'Edit' || tool === 'MultiEdit' || tool === 'NotebookEdit') {
     const path = args.file_path ?? args.notebook_path;
-    const outside = outsideProject(path, where);
-    if (outside) return `Proven: ${path || 'this edit'} ${outside}, and the agent edits only files inside the project, the app folder with its edit tools. ${DONE_HINT}`;
     const area = protectedArea(path, where);
     if (area) return `Proven: ${path} is under ${area}/, which the agent does not change. ${WHY[area]} ${DONE_HINT}`;
+    const app = appFolder(projectDir);
+    if (!app) return `${NO_APP} ${DONE_HINT}`;
+    const outside = outsideApp(path, where, app);
+    if (outside) return `Proven: ${path || 'this edit'} ${outside}, and the agent edits only files inside it, with its edit tools. ${DONE_HINT}`;
     return null;
   }
   if (tool === 'Bash') return denyVerdict(args.command, where) ?? allowVerdict(args.command);
-  if (typeof tool === 'string' && tool.startsWith('mcp__')) return mcpVerdict(tool, args, where);
+  if (typeof tool === 'string' && tool.startsWith('mcp__')) return mcpVerdict(tool, args, where, projectDir);
   return null;
 }
 
-// Every string anywhere in a tool call's arguments.
+const MAX_DEPTH = 10;
+const MAX_STRING = 4096;
+const MAX_VALUES = 2000;
+
+// Every string anywhere in a tool call's arguments, object keys included. It throws when it cannot look at everything.
 function stringsIn(value, out = [], depth = 0) {
+  if (out.length > MAX_VALUES) throw new Error('too many values to check');
   if (typeof value === 'string') out.push(value);
-  else if (depth < 8 && Array.isArray(value)) value.forEach((v) => stringsIn(v, out, depth + 1));
-  else if (depth < 8 && value && typeof value === 'object') Object.values(value).forEach((v) => stringsIn(v, out, depth + 1));
+  else if (Array.isArray(value) || (value && typeof value === 'object')) {
+    if (depth >= MAX_DEPTH) throw new Error('nested too deeply to check');
+    if (Array.isArray(value)) value.forEach((v) => stringsIn(v, out, depth + 1));
+    else {
+      for (const [k, v] of Object.entries(value)) {
+        out.push(k);
+        stringsIn(v, out, depth + 1);
+      }
+    }
+  }
   return out;
 }
 
-// An MCP tool is written by someone else, so the guard cannot tell what it writes. It blocks a call with a string
-// argument that points into a protected path (a plain path, an absolute one, or a file:// URL), and lets the rest through.
-function mcpVerdict(tool, args, where) {
-  for (const raw of stringsIn(args)) {
-    if (raw.length > 4096) continue;
-    for (const candidate of [raw, raw.replace(/^file:\/\/(localhost)?/i, '')]) {
+const PATH_LIKE = /^(\/|~|\.{1,2}(\/|\\|$)|[A-Za-z]:[\\/])/;
+const SCHEME_URL = /^[a-z][a-z0-9+.-]*:\/\//i;
+
+// Every path a string could mean: the string itself, its percent-decoded form, and for a file: URL the path it names.
+// Returns { paths, unreadable }.
+function pathsOf(raw) {
+  const paths = [];
+  let unreadable = false;
+  const add = (text) => {
+    paths.push(text);
+    if (/^file:/i.test(text)) {
+      try {
+        paths.push(fileURLToPath(new URL(text)));
+      } catch {
+        unreadable = true;
+      }
+    }
+  };
+  add(raw);
+  // Percent-decode up to three rounds (%252e is %2e is a dot), checking every form.
+  let text = raw;
+  for (let round = 0; round < 3 && text.includes('%'); round++) {
+    try {
+      text = decodeURIComponent(text);
+    } catch {
+      unreadable = true;
+      break;
+    }
+    add(text);
+  }
+  return { paths, unreadable };
+}
+
+// An MCP tool is written by someone else, so the guard cannot tell what it writes. So it checks the arguments and fails
+// closed: it blocks a call it cannot check completely (a string over the limit, too deep or too many values, a file: URL
+// or percent-encoding it cannot read), one with a string that points into a protected path, and one with a path-like
+// string that points outside the app folder. Other text passes.
+function mcpVerdict(tool, args, where, projectDir) {
+  let strings;
+  try {
+    strings = stringsIn(args);
+  } catch (err) {
+    return `Proven: the call to ${tool} has an argument that is ${err.message}, so the guard blocked it. ${DONE_HINT}`;
+  }
+  const app = appFolder(projectDir);
+  for (const raw of strings) {
+    if (raw.length > MAX_STRING) return `Proven: the call to ${tool} has a string that is too long to check, so the guard blocked it. ${DONE_HINT}`;
+    const { paths, unreadable } = pathsOf(raw);
+    if (unreadable) return `Proven: the call to ${tool} has a path or URL that could not be read (${raw.slice(0, 80)}), so the guard blocked it. ${DONE_HINT}`;
+    for (const candidate of paths) {
       const area = protectedArea(candidate, where);
       if (area) return `Proven: the call to ${tool} names ${raw.slice(0, 120)}, under the protected ${area}/, which the agent does not change. ${WHY[area]} ${DONE_HINT}`;
+      const pathLike = PATH_LIKE.test(candidate) || (/[\\/]/.test(candidate) && !/\s/.test(candidate) && !SCHEME_URL.test(candidate));
+      if (pathLike) {
+        if (!app) return `${NO_APP} ${DONE_HINT}`;
+        if (candidate.startsWith('~') || !insideApp(candidate, where, app)) {
+          return `Proven: the call to ${tool} names ${raw.slice(0, 120)}, which is outside the app folder ${app}/. The agent works only inside it. ${DONE_HINT}`;
+        }
+      }
     }
   }
   return null;

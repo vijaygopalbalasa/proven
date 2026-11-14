@@ -12,6 +12,12 @@
     "test": "node --test test/*.test.js",
     "demo": "node demo/server.js"
   },
+  "files": [
+    "bin",
+    "src",
+    "README.md",
+    "LICENSE"
+  ],
   "engines": {
     "node": ">=22"
   }

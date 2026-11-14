@@ -2,7 +2,7 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { settingsOf } from '../config.js';
 import { Refusal } from '../errors.js';
-import { assertOnlyPaths, commitPaths, fileAt, head, resolveCommit, short } from '../git.js';
+import { assertOnlyPaths, commitPaths, fileAt, git, head, resolveCommit, short } from '../git.js';
 import { canonicalJson, sha256 } from '../hash.js';
 import { readLock, settingsSha } from '../lock.js';
 import { loadState, lockChain, statusOf, writeJson } from '../state.js';
@@ -15,6 +15,15 @@ export async function cmdFreeze({ root, config, out }, [id]) {
   const p = ticketPaths(id);
   const ticketFile = join(root, p.ticket);
   if (!existsSync(ticketFile)) throw new Refusal(`${p.ticket} does not exist. Run proven new ${id} "<title>" first.`);
+
+  // proven loop will not start while the files proven init wrote are uncommitted, so say so before a ticket is frozen.
+  const loose = (git(root, ['ls-files', '--others', '--exclude-standard', '--', '.claude', 'CLAUDE.md', '.proven/config.json'], { allowFail: true }) ?? '').split('\n').filter(Boolean);
+  if (loose.length) {
+    const names = [...new Set(loose.map((f) => (f.split('/')[0] === '.claude' ? '.claude/' : f)))].join(', ');
+    throw new Refusal(
+      `proven init wrote ${names}, but they are not committed. proven loop will not start with them uncommitted. Run: git add -A && git commit -m "Add Proven", then proven freeze ${id} again.`,
+    );
+  }
 
   const ticketBuf = readFileSync(ticketFile);
   const ticket = parseTicket(ticketBuf.toString('utf8'), id);

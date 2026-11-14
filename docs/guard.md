@@ -12,14 +12,24 @@
 
 ## What it blocks
 
-- Edit tools may write only inside the project. A path outside it, or one that reaches outside through a symlink, is
-  denied (an edit to `~/.gitconfig` could make an allowed git command run code).
-- Writes by Write, Edit, MultiEdit and NotebookEdit to `tickets/` (where Kane also keeps its recordings), `receipts/`,
-  `.proven/`, `.claude/`, `.git/`, `.testmuai/`, `.mcp.json`, `CLAUDE.md`, and Proven's own files: `bin/`, `src/`, `package.json`, `node_modules/`, `test/`,
-  `docs/`, `.gitignore` and `README.md`. The agent's only writable area is the app folder.
-- MCP tool calls (the hook's matcher now includes `mcp__.*`). The guard cannot tell what someone else's tool writes, so it
-  blocks a call with any string argument that points into a protected path (a plain path, an absolute one or a `file://`
-  URL), and lets other MCP calls through.
+- Edit tools (Write, Edit, MultiEdit, NotebookEdit) are deny-by-default. They may write only inside the app folder named
+  in `.proven/config.json` (`demo/app` if the file is missing), and nowhere else. If the config cannot be read or names
+  something that is not a folder inside the project, every edit is blocked. A path that reaches outside the app folder
+  through `..` or a symlink is denied too (an edit to `~/.gitconfig` could make an allowed git command run code).
+  Paths into `tickets/` (where Kane also keeps its recordings), `receipts/`, `.proven/`, `.claude/`, `.git/`,
+  `.testmuai/`, `.mcp.json`, `CLAUDE.md`, `.gitattributes`, `.gitmodules` and Proven's own files (`bin/`, `src/`,
+  `package.json`, `node_modules/`, `test/`, `docs/`, `.gitignore`, `README.md`) get a specific message. The loop's one
+  need is the app folder, so this broke nothing in the demo or the TodoMVC run.
+- MCP tool calls (the hook's matcher includes `mcp__.*`). The guard cannot tell what someone else's tool writes, so it
+  checks every string in the arguments, object keys included, and fails closed:
+  - a call it cannot check completely is blocked: a string over 4096 characters, nesting deeper than 10 levels, more than
+    2000 values, or a `file:` URL or percent-encoding it cannot read;
+  - every string is checked as written, percent-decoded (up to three rounds) and, for `file:` URLs, as the path the URL
+    names, and a call that points into a protected path is blocked;
+  - a path-like string (it starts with `/`, `~`, `./` or `../`, or has a slash and no spaces) must point inside the app
+    folder, or the call is blocked. Ordinary text and `http(s)` URLs pass, and so does a bare file name such as
+    `notes.txt`, which the guard cannot tell from a word. A tool that writes a bare name to the project root is not
+    stopped by this check.
 - Anything it cannot read. A tool call that is not valid JSON, or has no tool name, or makes the guard throw, is blocked
   with exit code 2 and a reason. It never lets a call through because it could not understand it.
 - A person's steps: `proven new`, `proven freeze`, `proven red` and `proven loop`.
