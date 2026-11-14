@@ -8,7 +8,7 @@ export const GUARD_SOURCE = fileURLToPath(new URL('../hooks/proven-guard.mjs', i
 export const GUARD_PATH = '.claude/hooks/proven-guard.mjs';
 export const SETTINGS_PATH = '.claude/settings.json';
 export const GUARD_COMMAND = 'node "$CLAUDE_PROJECT_DIR/.claude/hooks/proven-guard.mjs"';
-export const GUARD_MATCHER = 'Write|Edit|MultiEdit|NotebookEdit|Bash';
+export const GUARD_MATCHER = 'Write|Edit|MultiEdit|NotebookEdit|Bash|mcp__.*';
 export const SECTION_START = '<!-- proven:start -->';
 export const SECTION_END = '<!-- proven:end -->';
 
@@ -117,7 +117,7 @@ export async function cmdInit({ root, config, out }) {
     out.say(`Added to .gitignore: ${missing.join(' ')}. Kane's evidence carries the runner's name and email.`);
   }
 
-  out.say(`Wrote ${GUARD_PATH}: it stops the agent from changing tickets/, receipts/, .proven/ and .claude/, and from running proven new, freeze and red.`);
+  out.say(`Wrote ${GUARD_PATH}: it stops the agent from writing to tickets/, receipts/, .proven/, .claude/, .git/, CLAUDE.md or Proven's own files, from running proven new, freeze, red and loop, and from any shell command outside a short read-only list.`);
   out.say(`Updated ${SETTINGS_PATH}: a PreToolUse hook runs the guard, and Bash calls may take up to 10 minutes, for Kane.`);
   out.say(`Updated CLAUDE.md: the agent runs ${proven} done T-N when it believes a ticket is done, and fixes the app, never the test.`);
   if (!existsSync(join(root, '.proven', 'config.json'))) {

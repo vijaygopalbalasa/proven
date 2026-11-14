@@ -84,7 +84,7 @@ test('an MCP call whose string arguments point into a protected path is blocked,
     { n: 3, ok: true, none: null },
     { files: ['site/a.js'] },
   ]) assert.equal(call(input), null, JSON.stringify(input));
-  assert.equal(call({ path: 'tickets/T-1.md' }, 'mcp__other__read_only'), call({ path: 'tickets/T-1.md' }), 'the verdict does not depend on the server name');
+  assert.match(call({ path: 'tickets/T-1.md' }, 'mcp__other__read_only') ?? '', /Proven: /, 'the verdict does not depend on the server or tool name');
 });
 
 test('a symlink with another name that leads into a protected folder is caught by the on-disk path', (t) => {
