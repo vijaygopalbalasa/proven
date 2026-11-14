@@ -176,7 +176,7 @@ Each Kane run prints the credits it used. `proven verify --replay` is two Kane r
   Verify the button at the bottom right of the list reads Clear completed (2).
   ```
 - "The agent can start" in `proven red`'s output means `proven loop` can now run. Nothing starts the agent until you run it, and `proven done` works the same if you make the change yourself.
-- Writing a criterion Kane can check: name the exact labels the feature will have (a button's text, a heading), check the lasting state of the page rather than a message that disappears, and leave step 1 to Proven (it checks your landmark text). The ticket template says the same.
+- Writing a criterion Kane can check: name the exact labels the feature will have (a button's text, a heading), check the lasting state of the page rather than a message that disappears, keep to one action per step, and leave step 1 to Proven (it checks your landmark text). Then read Kane's words at red before you run the loop, because a red can fail for a different reason than the one you meant. The ticket template says the same.
 - Times on TodoMVC: `red` about 2.5 minutes (its step 2 alone took 107 s in one run), `proven loop` about 5 minutes.
 
 What works, and what does not:
@@ -217,6 +217,7 @@ a person, agent stopped without a green or a reopen at the end, 2 something did 
 - Run Proven as the user who owns the clone. Git refuses repositories owned by someone else ("dubious ownership"), and Proven does not read your global `safe.directory`, so it then says "Run proven inside a git repository".
 - Proven runs git without your global git config. If the repository has no `user.name` or `user.email` of its own, it reads yours once from `git config --global` at startup, and refuses to commit if there is none.
 - The app must be static files. Proven serves its own snapshot of the app folder while Kane runs, and the start URL must be local with a port, like http://localhost:8091/.
+- Proven cannot tell a red for the wrong reason from a red for the right one. It only checks that the landmark step passed (so an outage is not red) and that a later step failed. Read Kane's words at red before you run the loop.
 - Kane's verdicts can be flaky. That is why red needs a passing landmark and a failing later step, why anything unclear counts as "did not run", and why recheck confirms a failure with a second fresh run before it reopens anything.
 - Evidence packs are not committed, because they carry the runner's name and email. Proven keeps only their sha256. Three of Kane's step screenshots (the demo cart only, cropped) are in `docs/images`. Kane's recording folder (`tickets/output-T-N/`) stays local for the same reason and is never used for a verdict. So every run authors every step: a minute or two and about 10 to 30 credits each.
 - `recheck`, `loop` and `verify --replay` run Kane, so they need Kane CLI, Chrome, a login and credits. All three ran live on Nov 13. The test suite uses a fake Kane through the `PROVEN_KANE_BIN` variable. Every run made that way says so in the output, the state and the receipt, and `verify` flags such a receipt.

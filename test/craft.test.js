@@ -68,6 +68,8 @@ test('the ticket template says how to write a criterion that Kane can check', ()
   assert.match(t, /Name the exact labels the feature will show/);
   assert.match(t, /lasting state of the page, not a message that disappears/);
   assert.match(t, /Step 1, the landmark check, is added for you/);
+  assert.match(t, /One action per step/);
+  assert.match(t, /Read Kane's words at red/);
 });
 
 test('npm packs only what runs: bin, src, README, LICENSE and package.json', () => {

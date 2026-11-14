@@ -6,7 +6,7 @@ import { kaneWords, runFrozenTest } from '../run.js';
 import { loadState, lockChain, statusOf, writeState } from '../state.js';
 import { checkId, ticketPaths } from '../ticket.js';
 
-// proven red T-N: prove the frozen test fails on the code as it is, for the right reason.
+// proven red T-N: prove the frozen test fails on the code as it is, with the landmark step passing and a later step failing.
 export async function cmdRed(ctx, [id]) {
   const { root, config, out } = ctx;
   checkId(id);
