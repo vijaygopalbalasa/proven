@@ -53,7 +53,7 @@ test('proven init writes the guard, a PreToolUse hook, Bash time limits and a CL
   assert.ok(statSync(join(repo.dir, '.claude/hooks/proven-guard.mjs')).mode & 0o100);
   const settings = settingsOf(repo);
   assert.deepEqual(settings.hooks.PreToolUse, [
-    { matcher: 'Write|Edit|MultiEdit|NotebookEdit|Bash', hooks: [{ type: 'command', command: GUARD_COMMAND, timeout: 30 }] },
+    { matcher: 'Write|Edit|MultiEdit|NotebookEdit|Bash|mcp__.*', hooks: [{ type: 'command', command: GUARD_COMMAND, timeout: 30 }] },
   ]);
   assert.equal(GUARD_COMMAND, 'node "$CLAUDE_PROJECT_DIR/.claude/hooks/proven-guard.mjs"');
   assert.deepEqual(settings.env, { BASH_DEFAULT_TIMEOUT_MS: '600000', BASH_MAX_TIMEOUT_MS: '900000' });
@@ -194,7 +194,6 @@ test('the hook blocks writes to tickets, receipts, .proven and .claude, and a pe
   // git command run code.
   const allowed = [
     ['Write', { file_path: join(dir, 'demo', 'app', 'cart.js'), content: 'fixed' }],
-    ['Edit', { file_path: join(dir, 'CLAUDE.md'), old_string: 'a', new_string: 'b' }],
     ['Read', { file_path: join(dir, 'tickets', 'T-1_test.md') }],
     ['Bash', { command: 'node bin/proven.js done T-1', timeout: 600000 }],
     ['Bash', { command: 'cat tickets/T-1.md .proven/state/T-1.json' }],
@@ -211,8 +210,8 @@ test('the hook blocks writes to tickets, receipts, .proven and .claude, and a pe
     assert.equal(r.stderr, '');
   }
 
-  // Input the guard does not understand is let through rather than stalling the agent.
-  assert.equal(runGuard(dir, 'not json').code, 0);
+  // Input the guard does not understand is blocked, never let through.
+  assert.equal(runGuard(dir, 'not json').code, 2);
 
   // The exact command from the settings, run by a shell the way Claude Code runs it, in a folder with a space.
   const spaced = join(tmpdir(), `proven guard ${process.pid}`);
