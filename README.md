@@ -10,7 +10,7 @@ Proven is a ticket board for coding agents. A ticket only closes after Kane CLI 
 
 I built it because my coding agent kept saying a ticket was done when it wasn't. Here, a person writes the ticket and freezes its test first. Kane has to fail that test on the code as it is. After the agent's change, Kane has to pass the same, unchanged test.
 
-Then Proven reruns Kane on every closed ticket. If a later change breaks one, a fresh Kane run reopens it and the loop gives it back to the agent. Nobody types anything in between. Three words I use: frozen means the ticket and its test are committed and locked before any work starts, red means Kane fails that test on the code as it was, and green means Kane passes the same unchanged test after the change.
+Then Proven reruns Kane on every closed ticket. If a later change breaks one, fresh Kane runs reopen it and the loop gives it back to the agent. Nobody types anything in between. Three words I use: frozen means the ticket and its test are committed and locked before any work starts, red means Kane fails that test on the code as it was, and green means Kane passes the same unchanged test after the change.
 
 ![The Proven board: three tickets, each with Kane's failure before the change and its pass after it](docs/images/board.png)
 
@@ -41,13 +41,18 @@ Demo video (2:53): https://youtu.be/A4ITb2efKEk
 
 ## What Kane saw (its own screenshots)
 
-Three of Kane CLI's own step screenshots, cropped to the cart (the demo shop is all that is on screen):
+Six of Kane CLI's own step screenshots, cropped to the page. The first row is the demo shop's cart. The second row is the Mithril bug from "Two bugs I didn't plant":
 
 <table>
 <tr>
 <td width="33%"><img src="docs/images/kane-t3-red.jpg" alt="Kane's screenshot of the cart: FALL15 typed, 'That code is not valid.', order total $30.00"><br><sub>T-3 before the change: Kane typed FALL15, the shop said "That code is not valid." and the total stayed $30.00 (red).</sub></td>
 <td width="33%"><img src="docs/images/kane-t3-green.jpg" alt="Kane's screenshot of the cart: FALL15 typed, 'Coupon applied: 15% off your items.', order total $26.25"><br><sub>T-3 after the change: the same test, "Coupon applied: 15% off your items." and the total is $26.25 (green).</sub></td>
 <td width="33%"><img src="docs/images/kane-t1-reopen.jpg" alt="Kane's screenshot of the cart during the recheck: SAVE10 typed, 'That code is not valid.', order total $30.00"><br><sub>T-1 on the recheck: SAVE10 typed, "That code is not valid." and $30.00, so T-1 reopened.</sub></td>
+</tr>
+<tr>
+<td width="33%"><img src="docs/images/mithril-before.jpg" alt="Kane's screenshot of TodoMVC before the delete: done-one completed, keep-a and keep-b active, 2 items left"><br><sub>Before the delete: done-one is completed, keep-a and keep-b are active.</sub></td>
+<td width="33%"><img src="docs/images/mithril-red.jpg" alt="Kane's screenshot of TodoMVC after the delete, All filter: only keep-b is left, 1 item left"><br><sub>Red: Kane deleted keep-a in the Active view, then opened All. done-one, which nobody clicked, is gone.</sub></td>
+<td width="33%"><img src="docs/images/mithril-green.jpg" alt="Kane's screenshot of TodoMVC after the change: done-one and keep-b remain, 1 item left"><br><sub>Green: the same frozen test after the change. done-one and keep-b remain.</sub></td>
 </tr>
 </table>
 
@@ -243,7 +248,7 @@ a person, agent stopped without a green or a reopen at the end, 2 something did 
 - The app must be static files. Proven serves its own snapshot of the app folder while Kane runs, and the start URL must be local with a port, like http://localhost:8091/.
 - Proven cannot tell a red for the wrong reason from a red for the right one. It only checks that the landmark step passed (so an outage is not red) and that a later step failed. Read Kane's words at red before you run the loop.
 - Kane's verdicts can be flaky. That is why red needs a passing landmark and a failing later step, why anything unclear counts as "did not run", and why recheck confirms a failure with a second fresh run before it reopens anything.
-- Evidence packs are not committed, because they carry the runner's name and email. Proven keeps only their sha256. Three of Kane's step screenshots (the demo cart only, cropped) are in `docs/images`. Kane's recording folder (`tickets/output-T-N/`) stays local for the same reason and is never used for a verdict. So every run authors every step: a minute or two and about 10 to 30 credits each.
+- Evidence packs are not committed, because they carry the runner's name and email. Proven keeps only their sha256. Six of Kane's step screenshots (the demo cart and a TodoMVC page, cropped) are in `docs/images`. Kane's recording folder (`tickets/output-T-N/`) stays local for the same reason and is never used for a verdict. So every run authors every step: a minute or two and about 10 to 30 credits each.
 - `recheck`, `loop` and `verify --replay` run Kane, so they need Kane CLI, Chrome, a login and credits. All three ran live on Nov 13. The test suite uses a fake Kane through the `PROVEN_KANE_BIN` variable. Every run made that way says so in the output, the state and the receipt, and `verify` flags such a receipt.
 - `--author` comes from Kane CLI 0.10.4's own help ("re-author every step"). It ran live on Nov 13 (every recheck run used it) and Kane accepted it. If Kane ever rejected it, every run would say "did not run", so nothing could pass by mistake.
 - A file in Kane's output folder that someone else changes while Kane runs cannot be told apart by its time. Against that, Proven relies on `--author` and on Kane's own summary showing no replayed step.
