@@ -18,6 +18,7 @@ import { pathToFileURL } from 'node:url';
 export const PROTECTED = [
   'tickets', 'receipts', '.proven', '.claude', '.git',
   'bin', 'src', 'package.json', 'package-lock.json', 'node_modules', 'test', 'docs', '.gitignore', 'readme.md',
+  '.testmuai', '.mcp.json', 'claude.md',
 ];
 export const PERSON_STEPS = ['new', 'freeze', 'red', 'loop'];
 // Programs that run another program named later on the line.
@@ -45,6 +46,9 @@ const WHY = {
   '.proven': 'Proven writes its own state there.',
   '.claude': 'That folder holds these guard rails.',
   '.git': 'Git config, hooks and refs decide what Proven trusts.',
+  '.testmuai': "Kane's own files. Proven starts Kane itself, and nothing the agent writes there counts.",
+  '.mcp.json': 'It decides which tool servers the agent can call.',
+  'claude.md': 'It holds the rules the agent is given.',
 };
 const OWN = 'That is part of Proven itself, which judges the ticket, so the agent does not change it.';
 for (const name of PROTECTED) WHY[name] ??= OWN;
@@ -61,7 +65,7 @@ function realish(p) {
     head = parent;
   }
   try {
-    return join(realpathSync(head), ...rest);
+    return join(realpathSync.native(head), ...rest);
   } catch {
     return p;
   }
@@ -464,26 +468,67 @@ export function decide(input, { projectDir }) {
     return null;
   }
   if (tool === 'Bash') return denyVerdict(args.command, where) ?? allowVerdict(args.command);
+  if (typeof tool === 'string' && tool.startsWith('mcp__')) return mcpVerdict(tool, args, where);
   return null;
 }
 
-async function main() {
-  let raw = '';
-  for await (const chunk of process.stdin) raw += chunk;
+// Every string anywhere in a tool call's arguments.
+function stringsIn(value, out = [], depth = 0) {
+  if (typeof value === 'string') out.push(value);
+  else if (depth < 8 && Array.isArray(value)) value.forEach((v) => stringsIn(v, out, depth + 1));
+  else if (depth < 8 && value && typeof value === 'object') Object.values(value).forEach((v) => stringsIn(v, out, depth + 1));
+  return out;
+}
+
+// An MCP tool is written by someone else, so the guard cannot tell what it writes. It blocks a call with a string
+// argument that points into a protected path (a plain path, an absolute one, or a file:// URL), and lets the rest through.
+function mcpVerdict(tool, args, where) {
+  for (const raw of stringsIn(args)) {
+    if (raw.length > 4096) continue;
+    for (const candidate of [raw, raw.replace(/^file:\/\/(localhost)?/i, '')]) {
+      const area = protectedArea(candidate, where);
+      if (area) return `Proven: the call to ${tool} names ${raw.slice(0, 120)}, under the protected ${area}/, which the agent does not change. ${WHY[area]} ${DONE_HINT}`;
+    }
+  }
+  return null;
+}
+
+// Decides one hook call from its raw JSON. Anything it cannot read or that goes wrong is a block, never a pass.
+export async function guard(raw, { projectDir: fixedDir, decideFn = decide } = {}) {
+  const unreadable = 'Proven: the guard could not read this tool call, so it blocked it. The agent edits the app with its edit tools and runs proven done.';
   let input;
   try {
     input = JSON.parse(raw);
   } catch {
-    // Not a tool call this guard understands. It lets it through rather than stall the agent.
-    return 0;
+    return { code: 2, message: unreadable };
   }
-  const projectDir = process.env.CLAUDE_PROJECT_DIR || (typeof input?.cwd === 'string' ? input.cwd : process.cwd());
-  const reason = decide(input, { projectDir });
-  if (!reason) return 0;
-  process.stderr.write(reason + '\n');
-  return 2;
+  if (!input || typeof input !== 'object' || Array.isArray(input) || typeof input.tool_name !== 'string') return { code: 2, message: unreadable };
+  try {
+    const projectDir = fixedDir || (typeof input.cwd === 'string' ? input.cwd : process.cwd());
+    const reason = decideFn(input, { projectDir });
+    return reason ? { code: 2, message: reason } : { code: 0 };
+  } catch (err) {
+    return { code: 2, message: `Proven: the guard failed (${err?.message ?? err}), so it blocked this call.` };
+  }
+}
+
+async function main() {
+  let raw = '';
+  try {
+    for await (const chunk of process.stdin) raw += chunk;
+  } catch {
+    // an unreadable stdin is handled as unreadable input below
+  }
+  const { code, message } = await guard(raw, { projectDir: process.env.CLAUDE_PROJECT_DIR });
+  if (message) process.stderr.write(message + '\n');
+  return code;
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(realish(resolve(process.argv[1]))).href) {
-  process.exitCode = await main();
+  try {
+    process.exitCode = await main();
+  } catch (err) {
+    process.stderr.write(`Proven: the guard failed (${err?.message ?? err}), so it blocked this call.\n`);
+    process.exitCode = 2;
+  }
 }

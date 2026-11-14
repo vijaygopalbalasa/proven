@@ -6,18 +6,15 @@
 
 [![CI](https://github.com/vijaygopalbalasa/proven/actions/workflows/ci.yml/badge.svg)](https://github.com/vijaygopalbalasa/proven/actions/workflows/ci.yml)
 
-**A ticket closes only when Kane CLI saw its frozen test fail before the change and pass after it.**
+Proven is a ticket board for coding agents. A ticket only closes after Kane CLI has seen its frozen test fail before the change and pass after it.
 
-Coding agents say "done" before it is true. With Proven, a person freezes a ticket's acceptance test first. Kane must
-fail it on the code as it is, then pass the same unchanged test after the agent's change. Proven also keeps checking:
-it re-runs Kane on every closed ticket, and a later change that breaks one gets it reopened by a fresh Kane run and
-handed back to the agent, with no person in between.
+I built it because my coding agent kept saying a ticket was done when it wasn't. Here, a person writes the ticket and freezes its test first. Kane has to fail that test on the code as it is. After the agent's change, Kane has to pass the same, unchanged test. Then Proven reruns Kane on every closed ticket. If a later change breaks one, a fresh Kane run reopens it and the loop gives it back to the agent. Nobody types anything in between.
 
 ![The Proven board: three tickets, each with Kane's failure before the change and its pass after it](docs/images/board.png)
 
 Demo video (2:53): https://youtu.be/A4ITb2efKEk
 
-**Try it in 30 seconds, with no install and no login:**
+**See it in 30 seconds, no install, no login** (needs Node.js 22 or newer):
 
 ```
 git clone https://github.com/vijaygopalbalasa/proven proven
@@ -25,14 +22,13 @@ cd proven
 npm start          # then open http://127.0.0.1:8090/
 ```
 
-Three words used below: **frozen** means the ticket and its test are committed and locked before any work starts. **Red**
-means Kane fails that test on the code as it was. **Green** means Kane passes the same unchanged test after the change.
+Three words I use below. Frozen: the ticket and its test are committed and locked before any work starts. Red: Kane fails that test on the code as it was. Green: Kane passes the same unchanged test after the change.
 
-What Kane caught in the recorded run (a demo shop with coupon codes). The demo tickets are written so this happens (see "Honest disclosure" below):
+I wrote ticket 3 of the demo shop (coupon codes) on purpose so that its obvious fix breaks ticket 1. More on that under "How the demo is set up". What Kane did in the recorded run:
 
-- Before any change, Kane failed the frozen test for the right reason: "The cart rejects the required FALL15 coupon, so the order total remains $30.00 instead of $26.25."
-- The agent's fix for that ticket broke an older one. A fresh Kane run failed it, and a second fresh run agreed: "The cart rejects the valid SAVE10 coupon, so the order total remains $30.00 instead of $27.50." The older ticket reopened by itself.
-- The loop handed it back, the agent fixed it, Kane passed it, and `proven verify --replay` ran Kane again at red and at green: CONFIRMED.
+- Before any change, Kane failed the frozen test and said why: "The cart rejects the required FALL15 coupon, so the order total remains $30.00 instead of $26.25."
+- The agent fixed ticket 3 and broke ticket 1. A fresh Kane run failed ticket 1, and a second fresh run agreed: "The cart rejects the valid SAVE10 coupon, so the order total remains $30.00 instead of $27.50." Ticket 1 reopened by itself.
+- The loop gave it back, the agent fixed it, and Kane passed it. `proven verify --replay` then ran Kane again at red and at green: CONFIRMED.
 
 ## What Kane saw (its own screenshots)
 
@@ -48,53 +44,43 @@ Three of Kane CLI's own step screenshots, cropped to the cart (the demo shop is 
 
 ## For judges
 
-1. **See it (30 seconds).** `npm start` shows the board over the receipts committed here. Each card's receipt is re-checked
-   with git when the board loads. Needs Node.js 22 or newer. No install, no login.
-2. **Run the tests.** `npm test` runs 155 tests, every command end to end, on a fake Kane (no login). It takes about 1 to 3 minutes.
-3. **Verify a receipt.** `node bin/proven.js verify receipts/T-1.json` checks it with git alone, no network. With a Kane
-   login, add `--replay` and Kane runs the frozen test again with the app at red (must fail) and at green (must pass).
-   Replay serves the app on port 8091, so nothing else may listen there.
-4. **See Kane fail a test yourself (about 30 credits, about 1 minute).** This needs Kane CLI and `kane-cli login`, and
-   nothing else. From the branch `try-it` (its code is at `7291370`; later commits there change only docs), where T-3 is
-   written but not frozen:
+1. **See it (30 seconds).** `npm start` shows the board over the receipts committed here. Each card's receipt is re-checked with git when the board loads. No install, no login.
+2. **Cheapest live check: replay a receipt.** `node bin/proven.js verify receipts/T-1.json --replay` needs Kane CLI and `kane-cli login`. It checks the receipt with git, then has Kane run the frozen test again with the app at red (it must fail) and at green (it must pass). I measured it on Nov 14: about 29 Kane credits (11 for the red run, 18 for the green run) and 2.5 to 3.5 minutes, depending on how busy the machine was. Port 8091 must be free.
+3. **Run the tests.** `npm test` runs 161 tests, every command end to end, on a fake Kane (no login). It takes about 3 to 4 minutes, longer on a busy machine.
+4. **See Kane fail a test yourself (about 30 credits, about 1 minute).** Needs Kane CLI and `kane-cli login`. On the branch `try-it`, T-3 is written but not frozen:
    ```
    git checkout try-it
    node bin/proven.js freeze T-3      # a person freezes the ticket's test
    node bin/proven.js red T-3         # Kane must fail it on the shop as it is
    ```
-   You should see Kane pass step 1 and fail step 2, with its own words for why. Port 8091 must be free.
-5. **Run the whole loop yourself.** Continue on the same branch after step 4:
+   You should see Kane pass step 1 and fail step 2, with its own words for why.
+5. **Run the whole loop.** Continue on the same branch after step 4:
    ```
    node bin/proven.js loop            # the agent, Kane and the recheck, in one command
    node bin/proven.js verify receipts/T-1.json --replay
    ```
-   Measured costs: `red` (step 4) about 30 Kane credits and about 1 minute. `loop` about 170 credits and about 11 minutes. Each
-   `verify --replay` about 25 to 50 credits and about 2.5 minutes. Steps 4 and 5 together with the final replay: about
-   225 to 280 credits and about 15 minutes. Nothing else may listen on port 8091: Proven serves the app there while Kane
-   runs.
-
-   What you need, stated plainly:
-   - Kane CLI with `kane-cli login`, and network access to Kane's cloud and to Anthropic.
-   - Google Chrome.
-   - Claude Code (`claude`), which runs headless (`claude -p`) on your own account and quota. Its first run in a folder
-     may ask you to trust it.
-   - Node.js 22 or newer (we tested on 24), and git with `user.name` and `user.email` set.
-   - We tested on macOS (Node 24) and on Linux (Node 22 and 24, in Docker).
-6. **Fallback without credits.** The receipts and state of the recorded run are committed here. `verify` works offline,
-   and [docs/recorded-run.md](docs/recorded-run.md) has the real terminal output of the run, line by line.
+   Measured: `red` about 30 Kane credits and 1 minute. `loop` about 170 credits and 11 minutes. Steps 4 and 5 together with the final replay: about 225 to 280 credits and 15 minutes. Port 8091 must be free.
+6. **If you can't run Kane.** The receipts and state of the recorded run are committed, `verify` works offline, and [docs/recorded-run.md](docs/recorded-run.md) has the terminal output of the run line by line.
 7. **Dates.** The first commit is `68295c6`, at 2026-11-13 02:20 IST (Nov 12 20:50 UTC). The history is as written.
 
-### Honest disclosure
+What you need for the live steps:
+- Kane CLI with `kane-cli login`, and network access to Kane's cloud and to Anthropic.
+- Google Chrome.
+- Claude Code (`claude`) for the loop. It runs headless (`claude -p`) on your own account and quota, and its first run in a folder may ask you to trust it. It is the only agent I tested (see [docs/loop.md](docs/loop.md) for others).
+- Node.js 22 or newer (CI runs 22 and 24) and git with `user.name` and `user.email` set.
+- I tested on macOS (Node 24) and on Linux (Node 22 and 24, in Docker).
 
-T-3 was written on purpose so that its plain reading (take the coupon codes from `coupons.json`) breaks T-1 (requirement
-8.1 in [docs/requirements.md](docs/requirements.md)). The agent took that reading on its own in all three live runs that day: two rehearsals in throwaway copies (their logs
-are not in this repo) and the filmed run recorded here. The recheck reopened T-1 each time: rehearsal 1 at `a51f39f` and
-rehearsal 2 at `ed46d29` (both commits are from those throwaway copies), the filmed run at `fb9d347`. Each reopen was a fresh run that failed, then a second fresh run
-that failed again. A fourth run, from a fresh clone of `try-it` following only this README, also reopened T-1 (that run
-is not in this repo's history). So the reopen is real, but it is not a surprise: the demo is built to show it.
+### How the demo is set up
 
-In our runs the agent never tried to edit a test, so the guard never had to block anything live.
-[docs/guard.md](docs/guard.md) shows it blocking when called the way Claude Code calls it.
+I wrote ticket 3 so that its obvious fix (take the coupon codes from `coupons.json`) breaks ticket 1 (requirement 8.1 in [docs/requirements.md](docs/requirements.md)). The agent took that fix in all 4 live runs:
+
+- Two rehearsals in throwaway copies, whose logs are not in this repo. T-1 reopened at `a51f39f` and at `ed46d29`, commits from those copies.
+- The recorded run below, where T-1 reopened at `fb9d347`.
+- A run from a fresh clone of `try-it` that followed only this README. It also reopened T-1, and it is not in this repo's history.
+
+Each reopen was a fresh Kane run that failed, then a second fresh run that agreed. The reopen happened every time because I set it up to. I'm not claiming the agent walked into it by accident.
+
+In my runs the agent never tried to edit a test, so the guard never blocked anything live. [docs/guard.md](docs/guard.md) shows it blocking when called the way Claude Code calls it.
 
 ## The recorded run
 
@@ -107,15 +93,11 @@ On Nov 13 (06:13 to 06:28 IST), starting from `14e9664`, one `proven loop` ran a
 - `proven verify receipts/T-1.json --replay`: CONFIRMED, 11 git checks. Kane failed step 2 at red `fb9d347` and passed at green `8d0207e`.
 - The whole take used about 207 Kane credits.
 
-Kane's and the agent's own words, with times, are in [docs/recorded-run.md](docs/recorded-run.md).
+Kane's words and the agent's, with times, are in [docs/recorded-run.md](docs/recorded-run.md).
 
-## The idea: red, then green
+## How it works
 
-AI coding agents say a ticket is done before it is. A passing test proves little if it might have passed anyway. So a
-person writes a ticket and freezes its acceptance test before any work starts. Kane must fail that test on the code as
-it is (red). The agent then changes the app and runs `proven done`, and Kane must pass the same, unchanged test (green).
-Proven never judges pass or fail itself: it runs Kane, reads Kane's events, checks hashes and git history, and writes a
-receipt that anyone can re-check. A later change that breaks a closed ticket reopens it.
+A person writes a ticket and freezes its test. Kane must fail that test on the code as it is (red). The agent then changes the app and runs `proven done`, and Kane must pass the same test (green). Proven never judges pass or fail itself. It runs Kane, reads Kane's events, checks hashes and git history, and writes a receipt that anyone can re-check.
 
 ## Install
 
@@ -147,14 +129,11 @@ Run `npm link` once to call Proven as `proven`. The commands below use `node bin
 `proven loop` hands each red or reopened ticket to the coding agent, one ticket at a time, shows the agent's tool calls,
 its words and Kane's verdicts as they happen, rechecks every done ticket from its own code, and hands back what
 reopens, for at most 2 rounds. It never trusts a verdict made inside the agent's session: after every session it checks
-git and file hashes first. Details, the agent command and exit codes: [docs/loop.md](docs/loop.md).
+git and file hashes first. Details, the agent command, using an agent other than Claude Code (untested) and exit codes: [docs/loop.md](docs/loop.md).
 
 ## The guard
 
-`proven init` writes a Claude Code hook. The agent can read files, edit the app with its edit tools and run
-`node bin/proven.js done T-N`. Everything else is blocked: writes to tickets, receipts, `.proven/`, `.git/` and Proven's
-own code, and every Bash command that is not on a short read-only allowlist. It is defence in depth, not a sandbox.
-Details: [docs/guard.md](docs/guard.md).
+`proven init` writes a Claude Code hook. The agent can read files, edit the app with its edit tools and run `node bin/proven.js done T-N`. The hook blocks writes to tickets, receipts, `.proven/`, `.git/`, `.testmuai/`, `.mcp.json`, `CLAUDE.md` and Proven's own code. It blocks every Bash command that is not on a short read-only allowlist, and any MCP tool call with an argument that points into one of those paths. If it cannot read a tool call, or fails, it blocks the call. It is not a sandbox. Details: [docs/guard.md](docs/guard.md).
 
 ## Use it on your own static app
 
@@ -176,7 +155,7 @@ proven loop                                 # after red, this is what starts the
 
 - `--url`: any free local port works. Proven serves your app folder there while Kane runs, and the page must show the
   landmark text.
-- The criterion we used on TodoMVC (the whole `tickets/T-1.md` and the commands are in [docs/own-app.md](docs/own-app.md)):
+- The criterion I used on TodoMVC (the whole `tickets/T-1.md` and the commands are in [docs/own-app.md](docs/own-app.md)):
   ```
   ### Clear completed shows the count
   Type Buy milk in the What needs to be done field and press Enter. Do the same for Walk dog and for Pay rent. Click the round checkbox next to Buy milk and the one next to Walk dog.
@@ -189,13 +168,13 @@ What works, and what does not:
 
 - **Static files only.** Proven serves the app folder itself while Kane runs. There is no build step and no server of
   your own.
-- **The app folder** must be inside the repository and not `tickets`, `receipts`, `.proven`, `.git`, `.claude`, `src`,
+- **The app folder** must be inside the repository and not `tickets`, `receipts`, `.proven`, `.git`, `.claude`, `.testmuai`, `.mcp.json`, `CLAUDE.md`, `src`,
   `bin`, `test`, `docs`, `node_modules`, `package.json`, `package-lock.json`, `README.md` or `.gitignore`: the guard keeps
   the agent out of those, so Proven refuses such a config. Use a folder like `site/` or `public/`.
 - **The agent can edit only the app folder.** It cannot touch your tests, docs or config.
 - **Needs** Kane CLI with `kane-cli login`, Chrome, Claude Code, `proven` on PATH, and a start URL with a free local port.
   Kane CLI runs Chrome for its steps (its own help: `--headless` "Run Chrome in headless mode"), so install Google Chrome.
-- **Tried on exactly one other app so far** (TodoMVC), in two runs, each with one ticket and one agent attempt. We have not shown apps that need
+- **Tried on exactly one other app so far** (TodoMVC), in two runs, each with one ticket and one agent attempt. I have not shown apps that need
   several attempts, or a recheck that reopens something, on an app of someone else's.
 
 ## Commands
@@ -204,7 +183,7 @@ What works, and what does not:
 |---|---|---|
 | `proven new T-N "<title>" [--url U] [--landmark L]` | person | writes `tickets/T-N.md` to fill in |
 | `proven freeze T-N` | person | writes `tickets/T-N_test.md`, commits ticket and test, then a lock naming that commit |
-| `proven red T-N` | person | Kane must fail the frozen test on the code as it is, for the right reason |
+| `proven red T-N` | person | Kane must fail the frozen test on the code as it is |
 | `proven done T-N` | agent | Kane decides. A pass commits the change and the receipt |
 | `proven verify receipts/T-N.json [--replay]` | anyone | re-checks a receipt with git, and with `--replay` with Kane at red and green |
 | `proven recheck [T-N ...]` | person or agent | runs done tickets' tests again and reopens one whose failure a second run confirms |
@@ -216,38 +195,22 @@ Exit codes for `red` and `done`: 0 ok, 1 Kane failed (or, at red, the test alrea
 `recheck`: 0 all still pass, 1 a ticket reopened, 2 something did not run. For `loop`: 0 all done and the last recheck passes, 1 needs
 a person, agent stopped without a green or a reopen at the end, 2 something did not run.
 
-## Honest limits
+## Limits
 
-- Local checks are tamper-evident, not tamper-proof. An agent with a shell can forge local git history. The stronger
-  check is `verify --replay`, where Kane itself runs the frozen test again at red and at green, ideally run by someone
-  else on their own machine. `proven loop` checks what it can see.
-- Receipts are tamper-evident for the files they hash. Kane does not sign them.
-- The guard rails are not a sandbox. The guard blocks writes to Proven's own code, and `proven loop` checks git and file
-  hashes after every agent session, but an agent with a shell can still try to get around both.
-- Run Proven as the user who owns the clone: git refuses repositories owned by someone else ("dubious ownership"), and Proven
-  does not read your global `safe.directory`, so it then says "Run proven inside a git repository".
-- Proven runs git without your global git config. If the repository has no `user.name` or `user.email` of its own, it
-  reads yours once from `git config --global` at startup, and refuses to commit if there is none.
-- The app must be static files for now, because Proven serves its own snapshot of the app folder while Kane runs, and
-  the start URL must be local with a port, like http://localhost:8091/.
-- Kane's verdicts can be flaky. That is why red needs a passing landmark and a failing later step, why anything unclear
-  counts as "did not run", and why recheck confirms a failure with a second fresh run before it reopens anything.
-- Evidence packs are not committed, because they carry the runner's name and email. Proven keeps only their sha256. Three
-  of Kane's own step screenshots (the demo cart only, cropped) are in `docs/images`.
-  Kane's recording folder (`tickets/output-T-N/`) stays local for the same reason and is never used for a verdict. So
-  every run authors every step: a minute or two and about 10 to 30 credits each.
-- `recheck`, `loop` and `verify --replay` run Kane, so they need Kane CLI, Chrome, a login and credits. All three ran
-  live on Nov 13 (see "The recorded run"). The test suite uses a fake Kane through the `PROVEN_KANE_BIN` variable; every
-  run made that way says so in the output, the state and the receipt, and `verify` flags such a receipt.
-- `--author` comes from Kane CLI 0.10.4's own help ("re-author every step"); it ran live on Nov 13 (every recheck run
-  used it) and Kane accepted it. If Kane ever rejected it, every run would say "did not run", so nothing could pass by
-  mistake.
-- A file in Kane's output folder that someone else changes while Kane runs cannot be told apart by its time. Against
-  that, Proven relies on `--author` and on Kane's own summary showing no replayed step.
+- Receipts and local checks show tampering, they do not prevent it. An agent with a shell can forge local git history, and Kane does not sign receipts. The stronger check is `verify --replay`, where Kane runs the frozen test again at red and at green, ideally on someone else's machine. `proven loop` checks what it can see.
+- The guard is not a sandbox. It blocks writes to Proven's own code, and `proven loop` checks git and file hashes after every agent session, but an agent with a shell can still try to get around both.
+- Run Proven as the user who owns the clone. Git refuses repositories owned by someone else ("dubious ownership"), and Proven does not read your global `safe.directory`, so it then says "Run proven inside a git repository".
+- Proven runs git without your global git config. If the repository has no `user.name` or `user.email` of its own, it reads yours once from `git config --global` at startup, and refuses to commit if there is none.
+- The app must be static files. Proven serves its own snapshot of the app folder while Kane runs, and the start URL must be local with a port, like http://localhost:8091/.
+- Kane's verdicts can be flaky. That is why red needs a passing landmark and a failing later step, why anything unclear counts as "did not run", and why recheck confirms a failure with a second fresh run before it reopens anything.
+- Evidence packs are not committed, because they carry the runner's name and email. Proven keeps only their sha256. Three of Kane's step screenshots (the demo cart only, cropped) are in `docs/images`. Kane's recording folder (`tickets/output-T-N/`) stays local for the same reason and is never used for a verdict. So every run authors every step: a minute or two and about 10 to 30 credits each.
+- `recheck`, `loop` and `verify --replay` run Kane, so they need Kane CLI, Chrome, a login and credits. All three ran live on Nov 13. The test suite uses a fake Kane through the `PROVEN_KANE_BIN` variable. Every run made that way says so in the output, the state and the receipt, and `verify` flags such a receipt.
+- `--author` comes from Kane CLI 0.10.4's own help ("re-author every step"). It ran live on Nov 13 (every recheck run used it) and Kane accepted it. If Kane ever rejected it, every run would say "did not run", so nothing could pass by mistake.
+- A file in Kane's output folder that someone else changes while Kane runs cannot be told apart by its time. Against that, Proven relies on `--author` and on Kane's own summary showing no replayed step.
 - `recheck` judges the app as committed and refuses while the app folder has uncommitted changes.
 
 ## Files
 
 `tickets/` holds tickets, frozen tests and locks. `receipts/` holds receipts. `.proven/state/` holds each ticket's red
 record and attempts. `.proven/config.json` holds the app folder, the time limit and the attempt limit, which are
-pinned when a ticket is frozen. How a run counts, and what we measured about Kane: [docs/kane-facts.md](docs/kane-facts.md).
+pinned when a ticket is frozen. How a run counts, and what I measured about Kane: [docs/kane-facts.md](docs/kane-facts.md).

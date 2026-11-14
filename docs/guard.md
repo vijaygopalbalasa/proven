@@ -15,8 +15,13 @@
 - Edit tools may write only inside the project. A path outside it, or one that reaches outside through a symlink, is
   denied (an edit to `~/.gitconfig` could make an allowed git command run code).
 - Writes by Write, Edit, MultiEdit and NotebookEdit to `tickets/` (where Kane also keeps its recordings), `receipts/`,
-  `.proven/`, `.claude/`, `.git/`, and Proven's own files: `bin/`, `src/`, `package.json`, `node_modules/`, `test/`,
+  `.proven/`, `.claude/`, `.git/`, `.testmuai/`, `.mcp.json`, `CLAUDE.md`, and Proven's own files: `bin/`, `src/`, `package.json`, `node_modules/`, `test/`,
   `docs/`, `.gitignore` and `README.md`. The agent's only writable area is the app folder.
+- MCP tool calls (the hook's matcher now includes `mcp__.*`). The guard cannot tell what someone else's tool writes, so it
+  blocks a call with any string argument that points into a protected path (a plain path, an absolute one or a `file://`
+  URL), and lets other MCP calls through.
+- Anything it cannot read. A tool call that is not valid JSON, or has no tool name, or makes the guard throw, is blocked
+  with exit code 2 and a reason. It never lets a call through because it could not understand it.
 - A person's steps: `proven new`, `proven freeze`, `proven red` and `proven loop`.
 - Bash is an allowlist. A command is allowed only if every segment (split on `|`, `&&`, `||`, `;` and newlines) is one of:
   - `proven done T-N` (as `node bin/proven.js done T-N`, `node ./bin/proven.js done T-N` or `proven done T-N`);
@@ -34,15 +39,25 @@
 A block exits with code 2 and says why on stderr, which Claude Code shows to the agent. The message names the segment
 and says the agent may only read files, edit the app with its edit tools, and run proven done.
 
+## Paths
+
+Edit tools and MCP arguments are compared by where the file really is: symbolic links are resolved with the on-disk
+(canonical) path of the deepest part that exists, and names are compared without regard to case. That covers a symlink
+with another name that leads into `tickets/`, and `Tickets/` on a case-insensitive disk. It does not cover a hard link to
+a protected file from somewhere else, or a second mount of the same disk. Those need a different kind of check (a
+sandbox), and the guard is not one.
+
+Kane's own writes to `.testmuai/` still work: they come from the process `proven done` starts, not through the agent's tools.
+
 ## What it is
 
-Defence in depth, not a sandbox. An agent with a shell outside the hook can still get around it. That is why a ticket is
+It is not a sandbox. An agent with a shell outside the hook can still get around it. That is why a ticket is
 shown as done only for a receipt that verifies, why `proven loop` checks git and file hashes after every session (see
 [loop.md](loop.md)), and why `verify --replay` stays the strongest check.
 
 ## Seen blocking
 
-In our live runs the agent never tried to change a test, so nothing was blocked live. This is the guard called the way
+In my live runs the agent never tried to change a test, so nothing was blocked live. This is the guard called the way
 Claude Code calls a PreToolUse hook: the tool call as JSON on stdin, `<project>` standing for the repository folder.
 Exit code 2 blocks the call and shows the reason to the agent; exit code 0 lets it through.
 

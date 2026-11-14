@@ -7,11 +7,12 @@ says" lines are cut by `proven loop` itself, which shortens them.
 
 Four things about the run, up front:
 
-- T-3 was written on purpose so that its plain reading (take the coupon codes from `coupons.json`) breaks T-1
-  (requirement 8.1 in [requirements.md](requirements.md)). The agent took that reading on its own, in all three live runs that day: two rehearsals in throwaway copies (their
-  logs are not in this repo) and the filmed run recorded here. The recheck reopened T-1 each time: rehearsal 1 at
-  `a51f39f` and rehearsal 2 at `ed46d29` (both commits are from those throwaway copies), the filmed run at `fb9d347`. Each reopen was a fresh run that failed, then a
-  second fresh run that failed again.
+- I wrote T-3 on purpose so that its plain reading (take the coupon codes from `coupons.json`) breaks T-1
+  (requirement 8.1 in [requirements.md](requirements.md)). The agent took that reading on its own, in all 4 live runs: two rehearsals in throwaway copies (their
+  logs are not in this repo), the filmed run recorded here, and a run from a fresh clone of `try-it` that followed only the
+  README (also not in this repo's history). The recheck reopened T-1 each time: rehearsal 1 at `a51f39f` and rehearsal 2
+  at `ed46d29` (both commits are from those throwaway copies), the filmed run at `fb9d347`. Each reopen was a fresh run
+  that failed, then a second fresh run that agreed.
 - The loop took 10 min 42 s, and the whole take, with `verify --replay`, used about 207 Kane credits.
 - Kane failed or passed each step on its own. Proven never judged the page.
 - No Kane evidence files are in this repository. Each Kane run's evidence is kept only as a sha256 in the ticket's state
