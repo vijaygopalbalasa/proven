@@ -16,7 +16,7 @@ Four things about the run, up front:
 - The loop took 10 min 42 s, and the whole take, with `verify --replay`, used about 207 Kane credits.
 - Kane failed or passed each step on its own. Proven never judged the page.
 - No Kane evidence files are in this repository. Each Kane run's evidence is kept only as a sha256 in the ticket's state
-  file. Three of Kane's own step screenshots (the demo cart only, cropped) are in `docs/images` and shown in the README.
+  file. Six of Kane's own step screenshots (the demo cart and a TodoMVC page, cropped) are in `docs/images` and shown in the README.
 
 ## 1. A person freezes T-3
 
