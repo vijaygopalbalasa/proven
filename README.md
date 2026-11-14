@@ -4,13 +4,24 @@
 
 Proven is a ticket board for coding agents. A ticket only closes after Kane CLI has seen its frozen test fail before the change and pass after it.
 
-I built it because my coding agent kept saying a ticket was done when it wasn't. Here, a person writes the ticket and freezes its test first. Kane has to fail that test on the code as it is. After the agent's change, Kane has to pass the same, unchanged test. Then Proven reruns Kane on every closed ticket. If a later change breaks one, a fresh Kane run reopens it and the loop gives it back to the agent. Nobody types anything in between.
+I built it because my coding agent kept saying a ticket was done when it wasn't. Here, a person writes the ticket and freezes its test first. Kane has to fail that test on the code as it is. After the agent's change, Kane has to pass the same, unchanged test.
+
+Then Proven reruns Kane on every closed ticket. If a later change breaks one, a fresh Kane run reopens it and the loop gives it back to the agent. Nobody types anything in between. Three words I use: frozen means the ticket and its test are committed and locked before any work starts, red means Kane fails that test on the code as it was, and green means Kane passes the same unchanged test after the change.
 
 ![The Proven board: three tickets, each with Kane's failure before the change and its pass after it](docs/images/board.png)
 
-Demo video (2:53): https://youtu.be/A4ITb2efKEk
+## Two bugs I didn't plant
 
-**See it in 30 seconds, no install, no login** (needs Node.js 22 or newer):
+I pointed Proven at two open issues on the TodoMVC examples, bugs another person reported. Each case repo has the ticket, Kane's red, the fix and the receipt.
+
+- **Mithril, tastejs/todomvc#2312.** Deleting a todo in the Active view deleted a different, hidden todo. Kane's red: "The final check expected two todos, but the page contained only keep-b after the All filter was selected." Claude Code changed delete and edit to use the todo itself instead of its position in the filtered list. Kane passed the same frozen test, and the receipt and the replays are CONFIRMED. Case repo: https://github.com/vijaygopalbalasa/proven-todomvc-2312
+- **ES5, tastejs/todomvc#2310.** "Mark all as complete" stayed unticked after ticking every todo. Kane's red: "After completing both todo items, the Mark all as complete checkbox was still not checked." The fix was one line (`checked` was set on the label, not the input), and it covers all three cases in the issue. Case repo: https://github.com/vijaygopalbalasa/proven-todomvc-2310
+
+A fix for each is ready for upstream.
+
+## Try it
+
+No install, no login (needs Node.js 22 or newer). This shows the board over the receipts committed here:
 
 ```
 git clone https://github.com/vijaygopalbalasa/proven proven
@@ -18,13 +29,11 @@ cd proven
 npm start          # then open http://127.0.0.1:8090/
 ```
 
-Three words I use below. Frozen: the ticket and its test are committed and locked before any work starts. Red: Kane fails that test on the code as it was. Green: Kane passes the same unchanged test after the change.
+To use Proven without cloning it, `npx github:vijaygopalbalasa/proven --help` runs it straight from GitHub (see "Use it on your own static app").
 
-I wrote ticket 3 of the demo shop (coupon codes) on purpose so that its obvious fix breaks ticket 1. More on that under "How the demo is set up". What Kane did in the recorded run:
+The cheapest live check is a replay. `node bin/proven.js verify receipts/T-1.json --replay` needs Kane CLI and `kane-cli login`. It checks the receipt with git, then has Kane run the frozen test again with the app at red (it must fail) and at green (it must pass). I measured it on Nov 14: about 29 Kane credits (11 for the red run, 18 for the green run) and 2.5 to 3.5 minutes, depending on how busy the machine was. Port 8091 must be free.
 
-- Before any change, Kane failed the frozen test and said why: "The cart rejects the required FALL15 coupon, so the order total remains $30.00 instead of $26.25."
-- The agent fixed ticket 3 and broke ticket 1. A fresh Kane run failed ticket 1, and a second fresh run agreed: "The cart rejects the valid SAVE10 coupon, so the order total remains $30.00 instead of $27.50." Ticket 1 reopened by itself.
-- The loop gave it back, the agent fixed it, and Kane passed it. `proven verify --replay` then ran Kane again at red and at green: CONFIRMED.
+Demo video (2:53): https://youtu.be/A4ITb2efKEk
 
 ## What Kane saw (its own screenshots)
 
@@ -41,23 +50,33 @@ Three of Kane CLI's own step screenshots, cropped to the cart (the demo shop is 
 ## For judges
 
 1. **See it (30 seconds).** `npm start` shows the board over the receipts committed here. Each card's receipt is re-checked with git when the board loads. No install, no login.
-2. **Cheapest live check: replay a receipt.** `node bin/proven.js verify receipts/T-1.json --replay` needs Kane CLI and `kane-cli login`. It checks the receipt with git, then has Kane run the frozen test again with the app at red (it must fail) and at green (it must pass). I measured it on Nov 14: about 29 Kane credits (11 for the red run, 18 for the green run) and 2.5 to 3.5 minutes, depending on how busy the machine was. Port 8091 must be free.
+2. **Replay a receipt.** The cheapest live check is under "Try it" above.
 3. **Run the tests.** `npm test` runs 171 tests, every command end to end, on a fake Kane (no login). It takes about 3 to 4 minutes, longer on a busy machine.
-4. **See Kane fail a test yourself (about 30 credits, about 1 minute).** Needs Kane CLI and `kane-cli login`. On the branch `try-it`, T-3 is written but not frozen:
-   ```
-   git checkout try-it
-   node bin/proven.js freeze T-3      # a person freezes the ticket's test
-   node bin/proven.js red T-3         # Kane must fail it on the shop as it is
-   ```
-   You should see Kane pass step 1 and fail step 2, with its own words for why.
-5. **Run the whole loop.** Continue on the same branch after step 4:
-   ```
-   node bin/proven.js loop            # the agent, Kane and the recheck, in one command
-   node bin/proven.js verify receipts/T-1.json --replay
-   ```
-   Measured: `red` about 30 Kane credits and 1 minute. `loop` about 170 credits and 11 minutes. Steps 4 and 5 together with the final replay: about 225 to 280 credits and 15 minutes. Port 8091 must be free.
-6. **If you can't run Kane.** The receipts and state of the recorded run are committed, `verify` works offline, and [docs/recorded-run.md](docs/recorded-run.md) has the terminal output of the run line by line.
-7. **Dates.** The first commit is `68295c6`, at 2026-11-13 02:20 IST (Nov 12 20:50 UTC). The history is as written.
+4. **See Kane fail a test yourself, then run the whole loop.** Both start on the branch `try-it`, where T-3 of the demo shop is written but not frozen. About 30 credits and 1 minute for the red, about 225 to 280 credits and 15 minutes for everything.
+5. **If you can't run Kane.** The receipts and state of the recorded run are committed, `verify` works offline, and [docs/recorded-run.md](docs/recorded-run.md) has the terminal output of the run line by line.
+6. **Dates.** The first commit is `68295c6`, at 2026-11-13 02:20 IST (Nov 12 20:50 UTC). The history is as written.
+
+<details>
+<summary>The exact steps for item 4, the costs, and what you need for the live steps</summary>
+
+See Kane fail a test yourself (about 30 credits, about 1 minute). Needs Kane CLI and `kane-cli login`. On the branch `try-it`, T-3 is written but not frozen:
+
+```
+git checkout try-it
+node bin/proven.js freeze T-3      # a person freezes the ticket's test
+node bin/proven.js red T-3         # Kane must fail it on the shop as it is
+```
+
+You should see Kane pass step 1 and fail step 2, with its own words for why.
+
+Run the whole loop. Continue on the same branch:
+
+```
+node bin/proven.js loop            # the agent, Kane and the recheck, in one command
+node bin/proven.js verify receipts/T-1.json --replay
+```
+
+Measured: `red` about 30 Kane credits and 1 minute. `loop` about 170 credits and 11 minutes. Both steps together with the final replay: about 225 to 280 credits and 15 minutes. Port 8091 must be free.
 
 What you need for the live steps:
 - Kane CLI with `kane-cli login`, and network access to Kane's cloud and to Anthropic.
@@ -65,6 +84,8 @@ What you need for the live steps:
 - Claude Code (`claude`) for the loop. It runs headless (`claude -p`) on your own account and quota, and its first run in a folder may ask you to trust it. It is the only agent I tested (see [docs/loop.md](docs/loop.md) for others).
 - Node.js 22 or newer (CI runs 22 and 24) and git with `user.name` and `user.email` set.
 - I tested on macOS (Node 24) and on Linux (Node 22 and 24, in Docker).
+
+</details>
 
 ### How the demo is set up
 
@@ -133,7 +154,7 @@ git and file hashes first. Details, the agent command, using an agent other than
 
 ## Use it on your own static app
 
-Two real runs on someone else's app are in [docs/own-app.md](docs/own-app.md): the vanilla JavaScript TodoMVC example,
+The two case repos above are real runs on TodoMVC bugs. Two earlier runs, on a feature I added to the vanilla JavaScript TodoMVC example, are in [docs/own-app.md](docs/own-app.md),
 with real Kane and Claude Code. Kane failed a new "Clear completed (2)" test on it, Claude Code made the one-line fix,
 Kane passed it, and `proven verify` printed CONFIRMED. What those runs show:
 
@@ -189,8 +210,7 @@ What works, and what does not:
 - **The agent can edit only the app folder.** It cannot touch your tests, docs or config.
 - **Needs** Kane CLI with `kane-cli login`, Chrome, Claude Code, `proven` on PATH, and a start URL with a free local port.
   Kane CLI runs Chrome for its steps (its own help: `--headless` "Run Chrome in headless mode"), so install Google Chrome.
-- **Tried on exactly one other app so far** (TodoMVC), in two runs, each with one ticket and one agent attempt. I have not shown apps that need
-  several attempts, or a recheck that reopens something, on an app of someone else's.
+- **Tried on one other app so far:** TodoMVC, in four runs (two on a feature I added, each with one agent attempt, and the two bug cases above). I have not shown a recheck that reopens something on an app of someone else's.
 
 ## Commands
 
