@@ -18,7 +18,7 @@ Then Proven reruns Kane on every closed ticket. If a later change breaks one, fr
 
 I pointed Proven at two open issues on the TodoMVC examples, bugs another person reported. Each case repo has the ticket, Kane's red, the fix and the receipt.
 
-- **Mithril, tastejs/todomvc#2312.** Deleting a todo in the Active view deleted a different, hidden todo. Kane's red: "The final check expected two todos, but the page contained only keep-b after the All filter was selected." Claude Code changed delete and edit to use the todo itself instead of its position in the filtered list. Kane passed the same frozen test, and the receipt and the replays are CONFIRMED. Case repo: https://github.com/vijaygopalbalasa/proven-todomvc-2312
+- **Mithril, tastejs/todomvc#2312.** Deleting a todo in the Active view deleted a different, hidden todo. Kane's red: "The final check expected two todos, but the page contained only keep-b after the All filter was selected." Claude Code changed delete and edit to use the todo itself instead of its position in the filtered list. Kane passed the same frozen test, and The receipt verifies, and two full replays agreed: Kane failed it at red and passed it at green. Case repo: https://github.com/vijaygopalbalasa/proven-todomvc-2312
 - **ES5, tastejs/todomvc#2310.** "Mark all as complete" stayed unticked after ticking every todo. Kane's red: "After completing both todo items, the Mark all as complete checkbox was still not checked." The fix was one line (`checked` was set on the label, not the input), and it covers all three cases in the issue. Case repo: https://github.com/vijaygopalbalasa/proven-todomvc-2310
 
 A fix for each is ready for upstream.
@@ -207,6 +207,7 @@ Each Kane run prints the credits it used. `proven verify --replay` is two Kane r
   ```
 - "The agent can start" in `proven red`'s output means `proven loop` can now run. Nothing starts the agent until you run it, and `proven done` works the same if you make the change yourself.
 - Writing a criterion Kane can check: name the exact labels the feature will have (a button's text, a heading), check the lasting state of the page rather than a message that disappears, keep to one action per step, and leave step 1 to Proven (it checks your landmark text). Then read Kane's words at red before you run the loop, because a red can fail for a different reason than the one you meant. The ticket template says the same.
+- For a longer test, raise `timeout_s` in `.proven/config.json` before you freeze. The lock pins it, and replays use the same limit. Kane runs are cut off at 300 s by default, and both TodoMVC cases had one run cut off.
 - Times on TodoMVC: `red` about 2.5 minutes (its step 2 alone took 107 s in one run), `proven loop` about 5 minutes.
 
 What works, and what does not:
@@ -258,4 +259,4 @@ a person, agent stopped without a green or a reopen at the end, 2 something did 
 
 `tickets/` holds tickets, frozen tests and locks. `receipts/` holds receipts. `.proven/state/` holds each ticket's red
 record and attempts. `.proven/config.json` holds the app folder, the time limit and the attempt limit, which are
-pinned when a ticket is frozen. How a run counts, and what I measured about Kane: [docs/kane-facts.md](docs/kane-facts.md).
+pinned when a ticket is frozen. For a longer test, raise `timeout_s` in `.proven/config.json` before you freeze. The lock pins it, and replays use the same limit. How a run counts, and what I measured about Kane: [docs/kane-facts.md](docs/kane-facts.md).
