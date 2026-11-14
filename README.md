@@ -209,7 +209,7 @@ Each Kane run prints the credits it used. `proven verify --replay` is two Kane r
   ```
 - "The agent can start" in `proven red`'s output means `proven loop` can now run. Nothing starts the agent until you run it, and `proven done` works the same if you make the change yourself.
 - Writing a criterion Kane can check: name the exact labels the feature will have (a button's text, a heading), check the lasting state of the page rather than a message that disappears, keep to one action per step, and leave step 1 to Proven (it checks your landmark text). Then read Kane's words at red before you run the loop, because a red can fail for a different reason than the one you meant. The ticket template says the same.
-- For a longer test, raise `timeout_s` in `.proven/config.json` before you freeze. The lock pins it, and a replay gets twice that limit. Kane runs are cut off at 300 s by default, and both TodoMVC cases had runs cut off.
+- For a longer test, raise `timeout_s` in `.proven/config.json` before you freeze. The lock pins it, and a replay gets twice that limit. Kane runs are cut off at 300 s by default, and both TodoMVC cases had a run cut off.
 - Times on TodoMVC: `red` about 2.5 minutes (its step 2 alone took 107 s in one run), `proven loop` about 5 minutes.
 
 What works, and what does not:
