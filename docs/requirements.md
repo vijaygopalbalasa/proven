@@ -22,7 +22,7 @@ One rule runs through everything: any commit a lock or a receipt names must alre
 lock or receipt is therefore written in its own commit, after the commit it names.
 
 Glossary: a ticket is T-N; its frozen test is `tickets/T-N_test.md` (Kane's test.md format, one `##` step per
-criterion); red means Kane failed the frozen test for the right reason before the change; green means Kane passed the
+criterion); red means Kane failed the frozen test before the change, with the landmark step passing and a later step failing; green means Kane passed the
 same test after it; a receipt is `receipts/T-N.json`.
 
 ## Requirement 1: Tickets and freeze
