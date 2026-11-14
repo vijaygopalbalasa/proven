@@ -4,6 +4,8 @@
 
 # Proven
 
+[![CI](https://github.com/vijaygopalbalasa/proven/actions/workflows/ci.yml/badge.svg)](https://github.com/vijaygopalbalasa/proven/actions/workflows/ci.yml)
+
 **A ticket closes only when Kane CLI saw its frozen test fail before the change and pass after it.**
 
 Coding agents say "done" before it is true. With Proven, a person freezes a ticket's acceptance test first. Kane must
