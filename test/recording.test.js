@@ -125,7 +125,8 @@ test('a run whose events show a replay does not count, whatever Kane concluded',
   assert.equal(r.code, 2, r.stdout);
   assert.match(r.stdout, /^T-1: Kane did not run: Kane replayed 2 recorded steps instead of authoring every step, so this run does not count\. Nothing changed\.$/m);
   r = await repo.run(['verify', 'receipts/T-1.json', '--replay'], { scenario: ['red', 'green'], env: REPLAYS });
-  assert.equal(r.code, 0, r.stdout);
+  assert.equal(r.code, 2, r.stdout);
+  assert.match(r.stdout, /^CONFIRMED \(git checks only\) /m);
   assert.match(r.stdout, /^ {2}skip {2}replay skipped: Kane replayed 2 recorded steps instead of authoring every step, so this run does not count$/m);
 });
 

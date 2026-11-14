@@ -123,7 +123,7 @@ test('recheck reopens a done ticket that a later change broke, and done closes i
   assert.match(r.stdout, new RegExp(`replay at red ${R2.slice(0, 7)}: Kane failed step 2 \\(Apply SAVE10\\), as the receipt records`));
   assert.doesNotMatch(r.stdout, /follows a reopen/, 'the replay is the full check');
   r = await repo.run(['verify', RECEIPT, '--replay'], { scenario: 'not-started' });
-  assert.equal(r.code, 0, r.stdout);
+  assert.equal(r.code, 2, r.stdout);
   assert.match(r.stdout, /follows a reopen by proven recheck: re-check it with --replay for full assurance/, 'a skipped replay is not the full check');
 
   // A recheck now finds every done ticket passing and changes nothing.

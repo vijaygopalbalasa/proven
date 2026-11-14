@@ -8,7 +8,8 @@ import { replayReceipt } from '../replay.js';
 
 // proven verify receipts/T-N.json [--replay]: re-check a receipt with git only, no network. With --replay, Kane also
 // runs the frozen test again with the app as it was at red (it must fail at the recorded step) and at green (it must
-// pass). When Kane does not run (signed out, no network, time limit), the git result stands.
+// pass). When the replay does not complete (signed out, no network, time limit), only the git checks ran: the headline
+// says so and the exit code is 2. Exit codes: 0 confirmed (with --replay, Kane agreed), 1 mismatch, 2 --replay did not complete.
 export async function cmdVerify({ cwd, out }, [file], flags) {
   if (!file) throw new Refusal('Give a receipt to check: proven verify receipts/T-1.json');
   const abs = resolve(cwd, file);
@@ -34,7 +35,9 @@ export async function cmdVerify({ cwd, out }, [file], flags) {
   let caveat = '';
   if (kanes.some((k) => k === FAKE_LABEL)) caveat = ', but made with a fake Kane, not Kane CLI';
   else if (kanes.some((k) => k !== 'kane-cli')) caveat = ', but it does not show that Kane CLI made it';
-  out.say(`${ok ? 'CONFIRMED' : 'MISMATCH'} ${rel}${caveat}`);
+  // With --replay, a replay that did not complete is only a git confirmation, and the headline says so.
+  const gitOnly = Boolean(ok && replay && replay.agreed === null);
+  out.say(`${ok ? (gitOnly ? 'CONFIRMED (git checks only)' : 'CONFIRMED') : 'MISMATCH'} ${rel}${caveat}`);
   for (const c of checks) out.say(c.ok ? `  ok    ${c.name}` : `  FAIL  ${c.name}: ${c.detail}`);
   if (replay) {
     for (const line of replay.lines) {
@@ -49,8 +52,9 @@ export async function cmdVerify({ cwd, out }, [file], flags) {
   }
   if (replay) {
     if (replay.agreed === true) out.say('Kane ran the frozen test again: it failed without the change and passed with it.');
-    else if (replay.agreed === null) out.say(ok ? 'Kane did not run again, so the git checks stand.' : 'Kane did not run again.');
+    else if (replay.agreed === null) out.say(ok ? (replay.note ?? 'The replay did not complete, so only the git checks ran.') : 'Kane did not run again.');
     else out.say('Kane does not agree with this receipt.');
   }
-  return ok ? 0 : 1;
+  if (!ok) return 1;
+  return gitOnly ? 2 : 0;
 }
