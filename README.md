@@ -35,7 +35,7 @@ npm start          # then open http://127.0.0.1:8090/
 
 To use Proven without cloning it, `npx github:vijaygopalbalasa/proven --help` runs it straight from GitHub (see "Use it on your own static app").
 
-The cheapest live check is a replay. `node bin/proven.js verify receipts/T-1.json --replay` needs Kane CLI and `kane-cli login`. It checks the receipt with git, then has Kane run the frozen test again with the app at red (it must fail) and at green (it must pass). I measured it on Nov 14: about 29 Kane credits (11 for the red run, 18 for the green run) and 2.5 to 3.5 minutes, depending on how busy the machine was. Port 8091 must be free.
+The cheapest live check is a replay. `node bin/proven.js verify receipts/T-1.json --replay` needs Kane CLI and `kane-cli login`. It checks the receipt with git, then has Kane run the frozen test again with the app at red (it must fail) and at green (it must pass). It costs about 30 to 45 Kane credits, because Kane's cost varies from run to run: 29 on Nov 14 (11 for the red run, 18 for the green run) and 45 on Nov 15 (35 and 10). It takes 2.5 to 3.5 minutes, depending on how busy the machine is. Port 8091 must be free.
 
 Demo video (2:55): https://youtu.be/9nl6kOpoOfc
 
@@ -60,7 +60,7 @@ Six of Kane CLI's own step screenshots, cropped to the page. The first row is th
 
 1. **See it (30 seconds).** `npm start` shows the board over the receipts committed here. Each card's receipt is re-checked with git when the board loads. No install, no login.
 2. **Replay a receipt.** The cheapest live check is under "Try it" above.
-3. **Run the tests.** `npm test` runs 177 tests, every command end to end, on a fake Kane (no login). It takes about 3 to 4 minutes, longer on a busy machine.
+3. **Run the tests.** `npm test` runs 177 tests, every command end to end, on a fake Kane (no login). It takes about a minute and a half, longer on a busy machine.
 4. **See Kane fail a test yourself, then run the whole loop.** Both start on the branch `try-it`, where T-3 of the demo shop is written but not frozen. About 30 credits and 1 minute for the red, about 225 to 280 credits and 15 minutes for everything.
 5. **If you can't run Kane.** The receipts and state of the recorded run are committed, `verify` works offline, and [docs/recorded-run.md](docs/recorded-run.md) has the terminal output of the run line by line.
 6. **Dates.** The first commit is `68295c6`, at 2026-11-13 02:20 IST (Nov 12 20:50 UTC). The history is as written.
@@ -156,7 +156,8 @@ Run `npm link` once to call Proven as `proven`. The commands below use `node bin
 
 `proven loop` hands each red or reopened ticket to the coding agent, one ticket at a time, shows the agent's tool calls,
 its words and Kane's verdicts as they happen, rechecks every done ticket from its own code, and hands back what
-reopens, for at most 2 rounds. It never trusts a verdict made inside the agent's session: after every session it checks
+reopens, for at most 2 rounds. The agent's prompt names only the ticket and the files to read. Kane's words reach it from
+`proven done`, which prints them when Kane fails the test, and from the ticket's state file (`.proven/state/T-N.json`) after a reopen. It never trusts a verdict made inside the agent's session: after every session it checks
 git and file hashes first. Details, the agent command, using an agent other than Claude Code (untested) and exit codes: [docs/loop.md](docs/loop.md).
 
 ## The guard
@@ -249,6 +250,7 @@ a person, agent stopped without a green or a reopen at the end, 2 something did 
 - Run Proven as the user who owns the clone. Git refuses repositories owned by someone else ("dubious ownership"), and Proven does not read your global `safe.directory`, so it then says "Run proven inside a git repository".
 - Proven runs git without your global git config. If the repository has no `user.name` or `user.email` of its own, it reads yours once from `git config --global` at startup, and refuses to commit if there is none.
 - The app must be static files. Proven serves its own snapshot of the app folder while Kane runs, and the start URL must be local with a port, like http://localhost:8091/.
+- A frozen test checks only what it says. T-3's test checks one code, FALL15, so a fix that hard-coded FALL15 would pass it too. Write tests that check every value the ticket names.
 - Proven cannot tell a red for the wrong reason from a red for the right one. It only checks that the landmark step passed (so an outage is not red) and that a later step failed. Read Kane's words at red before you run the loop.
 - Kane's verdicts can be flaky. That is why red needs a passing landmark and a failing later step, why anything unclear counts as "did not run", and why recheck confirms a failure with a second fresh run before it reopens anything.
 - Evidence packs are not committed, because they carry the runner's name and email. Proven keeps only their sha256. Six of Kane's step screenshots (the demo cart and a TodoMVC page, cropped) are in `docs/images`. Kane's recording folder (`tickets/output-T-N/`) stays local for the same reason and is never used for a verdict. So every run authors every step: a minute or two and about 10 to 30 credits each.
