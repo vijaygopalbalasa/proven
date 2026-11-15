@@ -33,7 +33,7 @@ To use Proven without cloning it, `npx github:vijaygopalbalasa/proven --help` ru
 
 The cheapest live check is a replay. `node bin/proven.js verify receipts/T-1.json --replay` needs Kane CLI and `kane-cli login`. It checks the receipt with git, then has Kane run the frozen test again with the app at red (it must fail) and at green (it must pass). I measured it on Nov 14: about 29 Kane credits (11 for the red run, 18 for the green run) and 2.5 to 3.5 minutes, depending on how busy the machine was. Port 8091 must be free.
 
-Demo video (2:53): https://youtu.be/A4ITb2efKEk
+Demo video (2:55): https://youtu.be/9nl6kOpoOfc
 
 ## What Kane saw (its own screenshots)
 
