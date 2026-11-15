@@ -35,6 +35,8 @@ The cheapest live check is a replay. `node bin/proven.js verify receipts/T-1.jso
 
 Demo video (2:55): https://youtu.be/9nl6kOpoOfc
 
+See it live: https://proven-board.vercel.app is a static copy of the board, built from the receipts committed here, with the demo shop at https://proven-board.vercel.app/shop/ . `npm start` serves the same board on your machine and re-checks every receipt with git as it loads.
+
 ## What Kane saw (its own screenshots)
 
 Six of Kane CLI's own step screenshots, cropped to the page. The first row is the demo shop's cart. The second row is the Mithril bug from "Two bugs I didn't plant":
