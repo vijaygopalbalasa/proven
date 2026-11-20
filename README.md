@@ -14,7 +14,7 @@ Then Proven reruns Kane on every closed ticket. If a later change breaks one, fr
 
 I pointed Proven at two open issues on the TodoMVC examples, bugs another person reported. Each case repo has the ticket, Kane's red, the fix and the receipt.
 
-- **Mithril, tastejs/todomvc#2312.** Deleting a todo in the Active view deleted a different, hidden todo. Kane's red: "The final check expected two todos, but the page contained only keep-b after the All filter was selected." Claude Code changed delete and edit to use the todo itself instead of its position in the filtered list. Kane passed the same frozen test, and the receipt verifies. Of five replays, three ran in full and agreed: Kane failed it at red and passed it at green. Two were cut off at red by an older time limit. Case repo: https://github.com/vijaygopalbalasa/proven-todomvc-2312
+- **Mithril, tastejs/todomvc#2312.** Deleting a todo in the Active view deleted a different, hidden todo. Kane's red: "The final check expected two todos, but the page contained only keep-b after the All filter was selected." Claude Code changed delete and edit to use the todo itself instead of its position in the filtered list. Kane passed the same frozen test, and the receipt verifies. Of five replays, three ran in full and agreed: Kane failed it at red and passed it at green. Two were cut off at red by an older time limit. A sixth, on Nov 20 from a fresh clone, ran in full and agreed again (170 credits, under 9 minutes). Case repo: https://github.com/vijaygopalbalasa/proven-todomvc-2312
 - **ES5, tastejs/todomvc#2310.** "Mark all as complete" stayed unticked after ticking every todo. Kane's red: "After completing both todo items, the Mark all as complete checkbox was still not checked." The fix was one line (`checked` was set on the label, not the input), and it covers all three cases in the issue. Case repo: https://github.com/vijaygopalbalasa/proven-todomvc-2310
 
 Both fixes are open as pull requests on TodoMVC: [#2318](https://github.com/tastejs/todomvc/pull/2318) (Mithril) and [#2319](https://github.com/tastejs/todomvc/pull/2319) (ES5).
@@ -31,7 +31,7 @@ npm start          # then open http://127.0.0.1:8090/
 
 To use Proven without cloning it, `npx github:vijaygopalbalasa/proven --help` runs it straight from GitHub (see "Use it on your own static app").
 
-The cheapest live check is a replay. `node bin/proven.js verify receipts/T-1.json --replay` needs Kane CLI and `kane-cli login`. It checks the receipt with git, then has Kane run the frozen test again with the app at red (it must fail) and at green (it must pass). It costs about 30 to 45 Kane credits, because Kane's cost varies from run to run: 29 on Nov 14 (11 for the red run, 18 for the green run) and 45 on Nov 15 (35 and 10). It takes 2.5 to 3.5 minutes, depending on how busy the machine is. Port 8091 must be free.
+The cheapest live check is a replay. `node bin/proven.js verify receipts/T-1.json --replay` needs Kane CLI and `kane-cli login`. It checks the receipt with git, then has Kane run the frozen test again with the app at red (it must fail) and at green (it must pass). It costs about 30 to 50 Kane credits, because Kane's cost varies from run to run: 29 on Nov 14 (11 for the red run, 18 for the green run), 45 on Nov 15 (35 and 10) and 49 on Nov 20 from a fresh clone (29 and 20, CONFIRMED in 2 min 25 s). It takes 2.5 to 3.5 minutes, depending on how busy the machine is. Port 8091 must be free.
 
 Demo video (2:55): https://youtu.be/9nl6kOpoOfc
 
@@ -103,6 +103,8 @@ I wrote ticket 3 so that its obvious fix (take the coupon codes from `coupons.js
 - A run from a fresh clone of `try-it` that followed only this README. It also reopened T-1, and it is not in this repo's history.
 
 Each reopen was a fresh Kane run that failed, then a second fresh run that agreed. The reopen happened every time because I set it up to. I'm not claiming the agent walked into it by accident.
+
+I also kept T-3's frozen test to one code, FALL15. So a fix that hard-coded FALL15 would pass it too. That is a choice in the demo, not something Kane missed; for your own tickets, write a test that checks every value the ticket names.
 
 In my runs the agent never tried to edit a test, so the guard never blocked anything live. [docs/guard.md](docs/guard.md) shows it blocking when called the way Claude Code calls it.
 
@@ -248,7 +250,7 @@ a person, agent stopped without a green or a reopen at the end, 2 something did 
 - Run Proven as the user who owns the clone. Git refuses repositories owned by someone else ("dubious ownership"), and Proven does not read your global `safe.directory`, so it then says "Run proven inside a git repository".
 - Proven runs git without your global git config. If the repository has no `user.name` or `user.email` of its own, it reads yours once from `git config --global` at startup, and refuses to commit if there is none.
 - The app must be static files. Proven serves its own snapshot of the app folder while Kane runs, and the start URL must be local with a port, like http://localhost:8091/.
-- A frozen test checks only what it says. T-3's test checks one code, FALL15, so a fix that hard-coded FALL15 would pass it too. Write tests that check every value the ticket names.
+- A frozen test checks only what it says (see how T-3's test is set up, above). Write tests that check every value the ticket names.
 - Proven cannot tell a red for the wrong reason from a red for the right one. It only checks that the landmark step passed (so an outage is not red) and that a later step failed. Read Kane's words at red before you run the loop.
 - Kane's verdicts can be flaky. That is why red needs a passing landmark and a failing later step, why anything unclear counts as "did not run", and why recheck confirms a failure with a second fresh run before it reopens anything.
 - Evidence packs are not committed, because they carry the runner's name and email. Proven keeps only their sha256. Six of Kane's step screenshots (the demo cart and a TodoMVC page, cropped) are in `docs/images`. Kane's recording folder (`tickets/output-T-N/`) stays local for the same reason and is never used for a verdict. So every run authors every step: a minute or two and about 10 to 30 credits each.
