@@ -33,7 +33,7 @@ To use Proven without cloning it, `npx github:vijaygopalbalasa/proven --help` ru
 
 The cheapest live check is a replay. `node bin/proven.js verify receipts/T-1.json --replay` needs Kane CLI and `kane-cli login`. It checks the receipt with git, then has Kane run the frozen test again with the app at red (it must fail) and at green (it must pass). It costs about 30 to 50 Kane credits, because Kane's cost varies from run to run: 29 on Nov 14 (11 for the red run, 18 for the green run), 45 on Nov 15 (35 and 10) and 49 on Nov 20 from a fresh clone (29 and 20, CONFIRMED in 2 min 25 s). It takes 2.5 to 3.5 minutes, depending on how busy the machine is. Port 8091 must be free.
 
-Demo video (2:55): https://youtu.be/9nl6kOpoOfc
+Demo video (2:55): https://youtu.be/otjSNp-_b8I (Kane CLI driving Chrome on the Mithril bug, filmed Nov 20). The earlier cut: https://youtu.be/9nl6kOpoOfc
 
 See it live: https://proven-board.vercel.app is a static copy of the board, built from the receipts committed here, with the demo shop at https://proven-board.vercel.app/shop/ . `npm start` serves the same board on your machine and re-checks every receipt with git as it loads.
 
